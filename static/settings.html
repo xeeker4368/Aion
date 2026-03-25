@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aion — Settings</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+
+        .header h1 { font-size: 22px; color: #fff; }
+
+        .back-link {
+            color: #5a8ab5;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover { color: #7ab0d9; }
+
+        .section {
+            background: #242424;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            font-size: 16px;
+            color: #fff;
+            margin-bottom: 15px;
+        }
+
+        .section p.desc {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 15px;
+        }
+
+        /* Secrets */
+        .secret-list { list-style: none; }
+
+        .secret-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .secret-name {
+            font-family: monospace;
+            font-size: 14px;
+            color: #ccc;
+        }
+
+        .delete-btn {
+            background: none;
+            border: 1px solid #664444;
+            color: #cc6666;
+            padding: 3px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .delete-btn:hover { background: #332222; }
+
+        .add-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .add-form input {
+            flex: 1;
+            padding: 8px 10px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .add-form button {
+            padding: 8px 16px;
+            background: #2a4a6b;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .add-form button:hover { background: #35608a; }
+
+        /* Skills */
+        .skill-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .skill-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .skill-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: #fff;
+        }
+
+        .skill-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 3px;
+        }
+
+        .skill-status.ready {
+            background: #1a3a1a;
+            color: #66cc66;
+            border: 1px solid #2a4a2a;
+        }
+
+        .skill-status.not-ready {
+            background: #3a1a1a;
+            color: #cc6666;
+            border: 1px solid #4a2a2a;
+        }
+
+        .skill-desc {
+            font-size: 13px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .skill-missing {
+            font-size: 12px;
+            color: #cc6666;
+            margin-top: 4px;
+        }
+
+        /* Skill install */
+        .install-area {
+            margin-top: 15px;
+        }
+
+        .install-area textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+
+        .install-area button {
+            margin-top: 8px;
+            padding: 8px 16px;
+            background: #2a4a6b;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .install-area button:hover { background: #35608a; }
+
+        .msg {
+            padding: 8px 12px;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .msg.success { background: #1a3a1a; color: #66cc66; }
+        .msg.error { background: #3a1a1a; color: #cc6666; }
+
+        .empty { color: #666; font-style: italic; font-size: 13px; }
+
+        /* Executors */
+        .executor-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .executor-tag {
+            font-family: monospace;
+            font-size: 12px;
+            padding: 3px 8px;
+            background: #1a3a1a;
+            color: #66cc66;
+            border: 1px solid #2a4a2a;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Aion — Settings</h1>
+    <a class="back-link" href="/">← Back to Chat</a>
+</div>
+
+<!-- Secrets -->
+<div class="section">
+    <h2>API Keys & Credentials</h2>
+    <p class="desc">
+        Encrypted credentials used by skills. Values are never displayed after saving.
+    </p>
+    <ul class="secret-list" id="secretList"></ul>
+    <div class="add-form">
+        <input type="text" id="secretKey" placeholder="Key name (e.g. MOLTBOOK_API_KEY)">
+        <input type="password" id="secretValue" placeholder="Value">
+        <button onclick="addSecret()">Save</button>
+    </div>
+    <div id="secretMsg"></div>
+</div>
+
+<!-- Skills -->
+<div class="section">
+    <h2>Installed Skills</h2>
+    <p class="desc">
+        Skills teach the entity new capabilities. Drop in a SKILL.md to add one.
+    </p>
+    <div id="skillList"></div>
+
+    <div class="install-area">
+        <h2 style="margin-top: 20px; margin-bottom: 10px;">Install New Skill</h2>
+        <p class="desc">Paste the contents of a SKILL.md file below.</p>
+        <textarea id="skillContent" placeholder="---
+name: my-skill
+description: What this skill does
+requires:
+  executors:
+    - web_search
+  config:
+    - SOME_API_KEY
+---
+# My Skill
+Instructions for the entity..."></textarea>
+        <button onclick="installSkill()">Install Skill</button>
+        <div id="skillMsg"></div>
+    </div>
+</div>
+
+<!-- Executors -->
+<div class="section">
+    <h2>Available Executors</h2>
+    <p class="desc">
+        Built-in capabilities that skills can use. These are the tools the entity has access to.
+    </p>
+    <div class="executor-list" id="executorList"></div>
+</div>
+
+<script>
+    // --- Secrets ---
+    async function loadSecrets() {
+        const res = await fetch('/api/secrets');
+        const data = await res.json();
+        const list = document.getElementById('secretList');
+
+        if (data.secrets.length === 0) {
+            list.innerHTML = '<li class="empty">No credentials saved yet.</li>';
+            return;
+        }
+
+        list.innerHTML = data.secrets.map(key => `
+            <li class="secret-item">
+                <span class="secret-name">${key}</span>
+                <button class="delete-btn" onclick="deleteSecret('${key}')">Remove</button>
+            </li>
+        `).join('');
+    }
+
+    async function addSecret() {
+        const key = document.getElementById('secretKey').value.trim();
+        const value = document.getElementById('secretValue').value.trim();
+        const msg = document.getElementById('secretMsg');
+
+        if (!key || !value) {
+            msg.innerHTML = '<div class="msg error">Both key name and value are required.</div>';
+            return;
+        }
+
+        const res = await fetch('/api/secrets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value }),
+        });
+
+        if (res.ok) {
+            msg.innerHTML = `<div class="msg success">${key} saved.</div>`;
+            document.getElementById('secretKey').value = '';
+            document.getElementById('secretValue').value = '';
+            loadSecrets();
+            loadSkills(); // Refresh skill status
+        } else {
+            msg.innerHTML = '<div class="msg error">Failed to save.</div>';
+        }
+
+        setTimeout(() => msg.innerHTML = '', 3000);
+    }
+
+    async function deleteSecret(key) {
+        if (!confirm(`Remove ${key}?`)) return;
+
+        await fetch(`/api/secrets/${key}`, { method: 'DELETE' });
+        loadSecrets();
+        loadSkills();
+    }
+
+    // --- Skills ---
+    async function loadSkills() {
+        const res = await fetch('/api/skills');
+        const data = await res.json();
+        const list = document.getElementById('skillList');
+
+        if (data.skills.length === 0) {
+            list.innerHTML = '<div class="empty">No skills installed.</div>';
+            return;
+        }
+
+        list.innerHTML = data.skills.map(skill => {
+            const statusClass = skill.status.ready ? 'ready' : 'not-ready';
+            const statusText = skill.status.ready ? 'Ready' : 'Not Ready';
+
+            let missingHtml = '';
+            if (skill.status.missing_executors.length > 0) {
+                missingHtml += `<div class="skill-missing">Missing executors: ${skill.status.missing_executors.join(', ')}</div>`;
+            }
+            if (skill.status.missing_config.length > 0) {
+                missingHtml += `<div class="skill-missing">Missing config: ${skill.status.missing_config.join(', ')} — add in API Keys above</div>`;
+            }
+
+            return `
+                <div class="skill-item">
+                    <div class="skill-header">
+                        <span class="skill-name">${skill.name}</span>
+                        <span class="skill-status ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="skill-desc">${skill.description}</div>
+                    ${missingHtml}
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function installSkill() {
+        const content = document.getElementById('skillContent').value.trim();
+        const msg = document.getElementById('skillMsg');
+
+        if (!content) {
+            msg.innerHTML = '<div class="msg error">Paste the SKILL.md content first.</div>';
+            return;
+        }
+
+        const res = await fetch('/api/skills/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, filename: 'SKILL.md' }),
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            msg.innerHTML = `<div class="msg error">${data.error}</div>`;
+        } else {
+            const status = data.status.ready ? 'Ready to use!' : `Installed but: ${data.status.summary}`;
+            msg.innerHTML = `<div class="msg success">${data.name} installed. ${status}</div>`;
+            document.getElementById('skillContent').value = '';
+            loadSkills();
+        }
+
+        setTimeout(() => msg.innerHTML = '', 5000);
+    }
+
+    // --- Executors ---
+    async function loadExecutors() {
+        const res = await fetch('/api/executors');
+        const data = await res.json();
+        const list = document.getElementById('executorList');
+
+        list.innerHTML = data.executors.map(name =>
+            `<span class="executor-tag">${name}</span>`
+        ).join('');
+    }
+
+    // Initialize
+    loadSecrets();
+    loadSkills();
+    loadExecutors();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+ollama
+chromadb
+cryptography
+requests
+pyyaml
+duckduckgo-search
