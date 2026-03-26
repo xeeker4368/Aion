@@ -5,4 +5,4 @@ chromadb
 cryptography
 requests
 pyyaml
-duckduckgo-search
+tavily-python

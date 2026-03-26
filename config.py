@@ -25,7 +25,7 @@ EMBED_MODEL = "nomic-embed-text"
 # llama3.1:8b default is 8192 tokens
 # These are approximate — we estimate tokens as len(text) / 4
 CONTEXT_WINDOW = 10240
-SOUL_TOKEN_BUDGET = 500
+SOUL_TOKEN_BUDGET = 663
 RETRIEVAL_TOKEN_BUDGET = 1500
 RESPONSE_TOKEN_BUDGET = 1000
 CONVERSATION_TOKEN_BUDGET = (
@@ -44,3 +44,6 @@ CHUNK_OVERLAP = 5     # overlap between final chunks
 
 # --- Retrieval ---
 RETRIEVAL_RESULTS = 5  # number of chunks to retrieve per search
+
+# --- Search Rate Limiting ---
+SEARCH_MONTHLY_LIMIT = 1000  # Tavily free tier: 1000/month

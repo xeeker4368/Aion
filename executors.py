@@ -168,27 +168,32 @@ def _web_fetch(url: str, max_chars: int = 8000) -> str:
         return f"Failed to fetch URL: {str(e)}"
 
 
-def _web_search(query: str, region: str = "us-en") -> str:
+def _web_search(query: str, max_results: int = 5) -> str:
     """
-    Search the web using DuckDuckGo. No API key required.
+    Search the web using Tavily. Requires TAVILY_API_KEY in vault.
 
     Args:
         query: The search query
-        region: Region code for results (default: us-en)
+        max_results: Maximum number of results (default 5)
     """
-    try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, region=region, max_results=5))
+    api_key = vault.get("TAVILY_API_KEY")
+    if not api_key:
+        return "Error: TAVILY_API_KEY not found. Add it in Settings (/settings)."
 
+    try:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=api_key)
+        response = client.search(query, max_results=max_results)
+
+        results = response.get("results", [])
         if not results:
             return "No results found."
 
         lines = []
         for r in results:
-            lines.append(f"Title: {r['title']}")
-            lines.append(f"URL: {r['href']}")
-            lines.append(f"Summary: {r['body']}")
+            lines.append(f"Title: {r.get('title', 'No title')}")
+            lines.append(f"URL: {r.get('url', '')}")
+            lines.append(f"Summary: {r.get('content', 'No content')}")
             lines.append("")
 
         return "\n".join(lines)[:4000]
@@ -285,7 +290,7 @@ def init_executors():
     register(
         "web_search",
         _web_search,
-        "Search the web using DuckDuckGo. Use when you need current information you don't have in memory.",
+        "Search the web using Tavily. Use when you need current information you don't have in memory.",
         {
             "type": "object",
             "properties": {
@@ -293,9 +298,9 @@ def init_executors():
                     "type": "string",
                     "description": "The search query",
                 },
-                "region": {
-                    "type": "string",
-                    "description": "Region code for results (default: us-en)",
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default 5)",
                 },
             },
             "required": ["query"],

@@ -3,8 +3,7 @@ Aion Chat Layer
 
 Handles communication with Ollama and assembles what the model sees:
 - SOUL.md (identity)
-- Known facts (compact, high-importance knowledge)
-- Retrieved conversation chunks (context, nuance)
+- Retrieved conversation chunks (context, nuance — includes facts from ChromaDB)
 - Recent summaries (big picture orientation)
 - Available skills (what capabilities the entity has)
 - Current conversation history (trimmed to fit the context window)
@@ -40,9 +39,7 @@ def _get_client():
     return _client
 
 
-def _estimate_tokens(text: str) -> int:
-    """Rough token estimate. 1 token ≈ 4 characters for English text."""
-    return len(text) // 4
+from debug import estimate_tokens as _estimate_tokens
 
 
 def load_soul() -> str:
@@ -55,7 +52,6 @@ def load_soul() -> str:
 
 def build_system_prompt(
     retrieved_chunks: list[dict],
-    facts: list[dict] = None,
     summaries: list[dict] = None,
     skill_descriptions: str = "",
     search_results: str = None,
@@ -65,38 +61,17 @@ def build_system_prompt(
 
     The model sees (in order):
     1. The soul (identity)
-    2. Known facts (compact, high-importance — quick answers)
-    3. Relevant conversation chunks (context, nuance)
-    4. Recent summaries (big picture orientation)
+    2. Relevant conversation chunks (context, nuance — includes facts from ChromaDB)
+    3. Recent summaries (big picture orientation)
 
     Each layer has a share of the retrieval token budget.
-    Facts get priority because they're the most compact and useful.
     """
     soul = load_soul()
     parts = [soul]
 
     tokens_remaining = RETRIEVAL_TOKEN_BUDGET
 
-    # --- Layer 1: Facts (compact, prioritized by importance) ---
-    if facts:
-        fact_texts = []
-        for fact in facts:
-            content = fact.get("content", "")
-            fact_tokens = _estimate_tokens(content)
-            if fact_tokens > tokens_remaining:
-                break
-            fact_texts.append(f"- {content}")
-            tokens_remaining -= fact_tokens
-
-        if fact_texts:
-            facts_block = "\n".join(fact_texts)
-            parts.append(
-                f"\n\n## What You Know\n\n"
-                f"These are things you have learned from your experiences:\n\n"
-                f"{facts_block}"
-            )
-
-    # --- Layer 2: Conversation chunks (context and nuance) ---
+    # --- Conversation chunks (context and nuance) ---
     if retrieved_chunks:
         chunk_texts = []
         for chunk in retrieved_chunks:
@@ -115,7 +90,7 @@ def build_system_prompt(
                 f"{chunks_block}"
             )
 
-    # --- Layer 3: Summaries (big picture) ---
+    # --- Summaries (big picture) ---
     if summaries:
         summary_texts = []
         for summary in summaries:

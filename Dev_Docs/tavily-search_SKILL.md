@@ -1,15 +1,17 @@
 ---
-name: duckduckgo-search
-version: 1.1.0
-description: Search the web using DuckDuckGo when you need current information you don't have in memory.
+name: tavily-search
+version: 1.0.0
+description: Search the web using Tavily when you need current information you don't have in memory.
 requires:
   executors:
     - web_search
     - web_fetch
+  config:
+    - TAVILY_API_KEY
 ---
-# DuckDuckGo Web Search
+# Tavily Web Search
 
-You can search the web using DuckDuckGo to find current information.
+You can search the web using Tavily to find current information.
 
 ## The Rule
 

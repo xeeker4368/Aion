@@ -80,26 +80,6 @@ def init_databases():
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id)
             )
         """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS facts (
-                id TEXT PRIMARY KEY,
-                conversation_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                importance INTEGER DEFAULT 5,
-                category TEXT DEFAULT 'general',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-            )
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_facts_conversation
-            ON facts(conversation_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_facts_importance
-            ON facts(importance DESC)
-        """)
-
         # Migration: add consolidated column if upgrading from Phase 1
         _migrate_working_db(conn)
 
@@ -234,10 +214,11 @@ def get_unchunked_ended_conversations() -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def save_consolidation(conversation_id: str, summary: str, facts: list[dict]):
+def save_consolidation(conversation_id: str, summary: str):
     """
-    Save consolidation results — summary and facts — for a conversation.
+    Save consolidation summary for a conversation.
     Marks the conversation as consolidated.
+    Facts are written to ChromaDB separately — not here.
     """
     now = datetime.now(timezone.utc).isoformat()
 
@@ -250,22 +231,6 @@ def save_consolidation(conversation_id: str, summary: str, facts: list[dict]):
             (summary_id, conversation_id, summary, now),
         )
 
-        # Save facts
-        for fact in facts:
-            fact_id = str(uuid.uuid4())
-            content = fact.get("content", "")
-            importance = fact.get("importance", 5)
-            category = fact.get("category", "general")
-
-            if not content:
-                continue
-
-            conn.execute(
-                "INSERT INTO facts (id, conversation_id, content, importance, category, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (fact_id, conversation_id, content, importance, category, now),
-            )
-
         # Mark conversation as consolidated
         conn.execute(
             "UPDATE conversations SET consolidated = 1 WHERE id = ?",
@@ -274,11 +239,11 @@ def save_consolidation(conversation_id: str, summary: str, facts: list[dict]):
 
 
 def get_unconsolidated_conversations() -> list[dict]:
-    """Find conversations that are chunked but not yet consolidated."""
+    """Find ended conversations that haven't been consolidated yet."""
     with _connect(WORKING_DB) as conn:
         rows = conn.execute(
             "SELECT * FROM conversations "
-            "WHERE chunked = 1 AND consolidated = 0",
+            "WHERE ended_at IS NOT NULL AND consolidated = 0",
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -291,17 +256,6 @@ def get_summary(conversation_id: str) -> str | None:
             (conversation_id,),
         ).fetchone()
     return row["content"] if row else None
-
-
-def get_facts_by_importance(min_importance: int = 1, limit: int = 50) -> list[dict]:
-    """Get facts ordered by importance, optionally filtered by minimum importance."""
-    with _connect(WORKING_DB) as conn:
-        rows = conn.execute(
-            "SELECT id, conversation_id, content, importance, category, created_at "
-            "FROM facts WHERE importance >= ? ORDER BY importance DESC LIMIT ?",
-            (min_importance, limit),
-        ).fetchall()
-    return [dict(row) for row in rows]
 
 
 def get_recent_summaries(limit: int = 5) -> list[dict]:

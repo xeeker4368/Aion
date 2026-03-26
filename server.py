@@ -24,6 +24,7 @@ Message lifecycle:
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile
@@ -37,8 +38,10 @@ import chat
 import vault
 import executors
 import skills
+import debug
+import search_limiter
 
-from config import LIVE_CHUNK_INTERVAL
+from config import LIVE_CHUNK_INTERVAL, CONTEXT_WINDOW
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aion")
@@ -62,14 +65,17 @@ async def lifespan(app: FastAPI):
     executors.init_executors()
     skills.init_skills()
 
-    # Chunk any conversations left open from last shutdown
+    # Check for conversations that need consolidation
     global _active_conversation_id
-    unchunked = db.get_unchunked_ended_conversations()
-    for conv in unchunked:
-        logger.info(f"Found unchunked conversation {conv['id']}, chunking now...")
-        messages = db.get_conversation_messages(conv["id"])
-        memory.create_final_chunks(conv["id"], messages)
-        db.mark_conversation_chunked(conv["id"])
+    pending = db.get_unconsolidated_conversations()
+    if pending:
+        logger.info(
+            f"{len(pending)} conversations pending consolidation. "
+            f"Run 'python consolidation.py' to process them."
+        )
+
+    debug.init_debug()
+    debug.log_startup_banner()
 
     logger.info("Aion ready.")
     yield
@@ -99,6 +105,7 @@ class ChatResponse(BaseModel):
     conversation_id: str
     memories_used: int
     tools_used: list[str] = []
+    debug: dict = {}
 
 
 class SecretRequest(BaseModel):
@@ -116,7 +123,7 @@ class SkillInstallRequest(BaseModel):
 # ============================================================
 
 def _end_active_conversation():
-    """End the current conversation and create final chunks."""
+    """End the current conversation. Consolidation runs separately."""
     global _active_conversation_id
 
     if _active_conversation_id is None:
@@ -125,14 +132,11 @@ def _end_active_conversation():
     conv_id = _active_conversation_id
     msg_count = db.get_conversation_message_count(conv_id)
 
+    db.end_conversation(conv_id)
+
     if msg_count > 0:
-        db.end_conversation(conv_id)
-        messages = db.get_conversation_messages(conv_id)
-        memory.create_final_chunks(conv_id, messages)
-        db.mark_conversation_chunked(conv_id)
-        logger.info(f"Conversation {conv_id} ended and chunked ({msg_count} messages)")
+        logger.info(f"Conversation {conv_id} ended ({msg_count} messages, pending consolidation)")
     else:
-        db.end_conversation(conv_id)
         logger.info(f"Conversation {conv_id} ended (empty)")
 
     _active_conversation_id = None
@@ -224,7 +228,7 @@ def _should_offer_tools(message: str) -> tuple[bool, str]:
         "what is the price", "how much does",
         "what's the weather", "weather in",
         "what time is it in",
-        "is there a", "does there exist",
+        "does there exist",
         "current version of", "latest version",
         "documentation for",
     ]
@@ -289,10 +293,56 @@ def _extract_search_query(message: str) -> str:
     return msg.rstrip("?.!").strip()
 
 
+def _is_trivial_message(message: str) -> bool:
+    """
+    Detect greetings and trivial messages that don't need memory retrieval.
+
+    The rule is simple: short messages matching common greeting/filler
+    patterns skip retrieval. Everything else triggers a search.
+    """
+    msg = message.lower().strip().rstrip("!?.")
+
+    # Very short messages are almost always greetings or filler
+    words = msg.split()
+    if len(words) > 8:
+        return False
+
+    trivial_patterns = [
+        # Greetings
+        "hi", "hey", "hello", "howdy", "yo", "sup",
+        "hi there", "hey there", "hello there",
+        "good morning", "good afternoon", "good evening",
+        "good night", "morning", "evening",
+        "whats up", "what's up", "wassup",
+        "how are you", "how's it going", "how are things",
+        "hows it going", "how you doing", "how ya doing",
+        # Confirmations
+        "ok", "okay", "sure", "thanks", "thank you",
+        "got it", "cool", "nice", "great", "awesome",
+        "sounds good", "makes sense", "understood",
+        "yep", "yup", "yeah", "yes", "no", "nope", "nah",
+        # Farewells
+        "bye", "goodbye", "see you", "see ya", "later",
+        "goodnight", "good night", "take care",
+        "talk to you later", "ttyl",
+    ]
+
+    return msg in trivial_patterns
+
+
 def _run_server_side_search(query: str) -> str:
     """Run a web search server-side and return formatted results."""
+    if not search_limiter.can_search():
+        usage = search_limiter.get_usage()
+        logger.warning(
+            f"Search BLOCKED — monthly limit reached "
+            f"({usage['used']}/{usage['limit']})"
+        )
+        return "Search is unavailable — the monthly search limit has been reached."
+
     logger.info(f"Server-side search: {query}")
-    result = executors.execute("web_search", {"query": query, "region": "us-en"})
+    result = executors.execute("web_search", {"query": query})
+    search_limiter.record_search()
     return result
 
 
@@ -319,22 +369,30 @@ async def handle_chat(request: ChatRequest):
     # 2. Live chunk check
     _maybe_create_live_chunk(conversation_id, msg_count)
 
-    # 3. Retrieve memories
-    retrieved_chunks = memory.search(
-        query=request.message,
-        exclude_conversation_id=conversation_id,
-    )
-    facts = db.get_facts_by_importance(min_importance=4, limit=30)
-    summaries = db.get_recent_summaries(limit=5)
-
-    logger.info(
-        f"Retrieved {len(retrieved_chunks)} chunks, "
-        f"{len(facts)} facts, {len(summaries)} summaries"
-    )
+    # 3. Retrieve memories (skip for greetings and trivial messages)
+    if _is_trivial_message(request.message):
+        retrieved_chunks = []
+        summaries = []
+        logger.info("Retrieval: SKIPPED (trivial message)")
+    else:
+        retrieved_chunks = memory.search(
+            query=request.message,
+            exclude_conversation_id=conversation_id,
+        )
+        summaries = db.get_recent_summaries(limit=5)
+        logger.info(
+            f"Retrieved {len(retrieved_chunks)} chunks, "
+            f"{len(summaries)} summaries"
+        )
+        for i, chunk in enumerate(retrieved_chunks):
+            dist = chunk.get("distance", "?")
+            preview = chunk.get("text", "")[:80].replace("\n", " ")
+            logger.info(f"  Chunk {i}: [{dist:.4f}] {preview}...")
 
     # 4. Server-side tool execution (no tools passed to model)
     global _pending_search_topic
     search_results = None
+    query = ""
 
     should_search, search_type = _should_offer_tools(request.message)
 
@@ -363,7 +421,6 @@ async def handle_chat(request: ChatRequest):
     # 6. Assemble system prompt
     system_prompt = chat.build_system_prompt(
         retrieved_chunks=retrieved_chunks,
-        facts=facts,
         summaries=summaries,
         skill_descriptions=skill_desc,
         search_results=search_results,
@@ -373,22 +430,118 @@ async def handle_chat(request: ChatRequest):
     conversation_messages = db.get_conversation_messages(conversation_id)
     trimmed_messages = chat.trim_conversation_for_context(conversation_messages)
 
-    # 8. Send to Ollama (NO tool definitions — server handles tools)
+    # 8. Debug logging
+    total_tokens = debug.estimate_tokens(system_prompt) + sum(
+        debug.estimate_tokens(m["content"]) for m in trimmed_messages
+    )
+    request_data = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "conversation_id": conversation_id,
+        "message_number": msg_count,
+        "user_message": request.message,
+        "retrieval_skipped": _is_trivial_message(request.message),
+        "chunks_count": len(retrieved_chunks),
+        "chunks_tokens": debug.estimate_tokens(
+            "\n".join(c.get("text", "") for c in retrieved_chunks)
+        ),
+        "summaries_count": len(summaries),
+        "summaries_tokens": debug.estimate_tokens(
+            "\n".join(s.get("content", "") for s in summaries)
+        ),
+        "skills_tokens": debug.estimate_tokens(skill_desc),
+        "search_fired": search_results is not None,
+        "search_type": search_type if should_search else "",
+        "search_query": query if should_search and search_type == "search" else (
+            _pending_search_topic or ""
+        ),
+        "search_results_tokens": debug.estimate_tokens(search_results)
+        if search_results
+        else 0,
+        "soul_tokens": debug.estimate_tokens(chat.load_soul()),
+        "system_prompt_total_tokens": debug.estimate_tokens(system_prompt),
+        "conversation_history_tokens": sum(
+            debug.estimate_tokens(m["content"]) for m in trimmed_messages
+        ),
+        "conversation_messages_sent": len(trimmed_messages),
+        "conversation_messages_total": len(conversation_messages),
+        "messages_trimmed": len(conversation_messages) - len(trimmed_messages),
+        "total_tokens": total_tokens,
+        "context_window": CONTEXT_WINDOW,
+        "budget_exceeded": total_tokens > CONTEXT_WINDOW,
+        "headroom": CONTEXT_WINDOW - total_tokens,
+        "system_prompt_full": system_prompt,
+    }
+    debug.log_request(request_data)
+
+    # 9. Send to Ollama (NO tool definitions — server handles tools)
     response_text = chat.send_message(system_prompt, trimmed_messages)
 
-    # 9. Save response
+    # 10. Debug response logging
+    response_tokens = debug.estimate_tokens(response_text)
+    debug.log_response({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "response_tokens": response_tokens,
+        "response_preview": response_text[:200],
+        "total_round_trip_tokens": total_tokens + response_tokens,
+        "context_window": CONTEXT_WINDOW,
+        "response_full": response_text,
+    })
+
+    # 11. Save response
     db.save_message(conversation_id, "assistant", response_text)
     msg_count = db.get_conversation_message_count(conversation_id)
 
-    # 10. Live chunk check
+    # 12. Live chunk check
     _maybe_create_live_chunk(conversation_id, msg_count)
 
     logger.info(f"Response sent (conversation now at {msg_count} messages)")
 
+    # 13. Build frontend debug data
+    frontend_debug = {
+        "tokens_used": total_tokens,
+        "tokens_headroom": CONTEXT_WINDOW - total_tokens,
+        "context_window": CONTEXT_WINDOW,
+        "retrieval_skipped": _is_trivial_message(request.message),
+        "breakdown": {
+            "soul": debug.estimate_tokens(chat.load_soul()),
+            "chunks": debug.estimate_tokens(
+                "\n".join(c.get("text", "") for c in retrieved_chunks)
+            ),
+            "summaries": debug.estimate_tokens(
+                "\n".join(s.get("content", "") for s in summaries)
+            ),
+            "skills": debug.estimate_tokens(skill_desc),
+            "search": debug.estimate_tokens(search_results) if search_results else 0,
+            "history": sum(
+                debug.estimate_tokens(m["content"]) for m in trimmed_messages
+            ),
+        },
+        "chunks": [
+            {
+                "preview": c.get("text", "")[:120],
+                "distance": round(c.get("distance", 0), 4),
+                "conversation_id": c.get("conversation_id", ""),
+            }
+            for c in retrieved_chunks
+        ],
+        "search": {
+            "fired": search_results is not None,
+            "query": query if should_search and search_type == "search" else "",
+            "type": search_type if should_search else "",
+            "tokens": debug.estimate_tokens(search_results) if search_results else 0,
+        },
+        "conversation": {
+            "messages_sent": len(trimmed_messages),
+            "messages_total": len(conversation_messages),
+            "messages_trimmed": len(conversation_messages) - len(trimmed_messages),
+        },
+    }
+
     return ChatResponse(
         response=response_text,
         conversation_id=conversation_id,
-        memories_used=len(retrieved_chunks) + len(facts),
+        memories_used=len(retrieved_chunks),
+        debug=frontend_debug,
     )
 
 
@@ -484,6 +637,12 @@ async def uninstall_skill(name: str):
     if removed:
         return {"status": "removed", "name": name}
     return JSONResponse(status_code=404, content={"error": "Skill not found"})
+
+
+@app.get("/api/search/usage")
+async def search_usage():
+    """Get current search API usage stats."""
+    return search_limiter.get_usage()
 
 
 @app.get("/api/executors")

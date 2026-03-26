@@ -2,11 +2,11 @@
 Aion Consolidation
 
 Reads completed conversations and produces two things:
-- A summary: natural language account of what happened
-- Facts: individual pieces of knowledge worth remembering
+- A summary: natural language account of what happened (→ DB2)
+- Facts: individual pieces of knowledge worth remembering (→ ChromaDB)
 
-Uses qwen3:14b for higher quality output. Runs as a background
-process — not real-time, so speed doesn't matter.
+Uses qwen3:14b for extraction. Runs as a batch process — not
+real-time, so speed doesn't matter.
 
 One prompt, one pass. No structured extraction pipeline.
 The model reads the conversation and reasons about it naturally.
@@ -24,22 +24,23 @@ from config import OLLAMA_HOST, CONSOLIDATION_MODEL
 
 logger = logging.getLogger("aion.consolidation")
 
-CONSOLIDATION_PROMPT = """You are reading a conversation transcript. Your job is to extract what matters from this conversation for long-term memory.
+# Explicit context window for the consolidation model.
+# qwen3:14b may default to 4096 which truncates longer conversations.
+# 16384 gives room for full transcripts + prompt.
+CONSOLIDATION_CTX = 16384
 
-Read the full conversation carefully, then produce two things:
+CONSOLIDATION_PROMPT = """Read this conversation carefully. Extract what matters for long-term memory.
 
-1. SUMMARY: A natural language account of what happened in this conversation. Write it like you're telling someone what was discussed. 2-4 sentences. Capture the important topics, any decisions made, emotional tone if relevant, and anything that changed or was corrected.
+Produce two things:
 
-2. FACTS: Individual pieces of knowledge worth remembering long-term. Each fact should be:
+1. SUMMARY: A natural language account of what happened. 2-4 sentences. Capture the important topics, decisions made, emotional tone if relevant, and anything that changed.
+
+2. FACTS: Individual pieces of knowledge worth remembering. Each fact should be:
 - 1-3 sentences, one topic per fact
-- Written in natural language with context (who said it, why it matters)
-- Given an importance score from 1-10:
-  - 1-3: Minor detail, conversational filler
-  - 4-6: Useful context, preferences, opinions
-  - 7-9: Core facts about identity, relationships, important events
-  - 10: Critical corrections or foundational information
+- Written in natural language with context
 
 Rules for facts:
+- Use actual names of people (e.g., "Lyle" not "the user", "Sarah" not "the user's wife")
 - Include WHO said or established the fact
 - Include WHEN (use the timestamps from the conversation)
 - Do NOT include assistant reactions or conversational filler as facts
@@ -47,12 +48,18 @@ Rules for facts:
 - If something was CORRECTED in this conversation, note both the old and new information
 - If a fact references something from a previous conversation, note that connection
 
+Give each fact an importance score:
+- 1-3: Minor detail, conversational filler
+- 4-6: Useful context, preferences, opinions
+- 7-9: Core facts about identity, relationships, important events
+- 10: Critical corrections or foundational information
+
 Respond with valid JSON in exactly this format:
 {
   "summary": "Your summary here.",
   "facts": [
     {
-      "content": "The fact in natural language with context.",
+      "content": "The fact in natural language with names and context.",
       "importance": 7,
       "category": "personal"
     }
@@ -69,9 +76,16 @@ Here is the conversation transcript:
 def consolidate_conversation(conversation_id: str) -> dict | None:
     """
     Run consolidation on a single conversation.
+
+    Flow:
+    1. Read conversation from DB2
+    2. Send to qwen3:14b for one-step extraction
+    3. Save summary to DB2
+    4. Embed facts into ChromaDB
+    5. Clean up live chunks (replaced by facts)
+
     Returns the consolidation result or None if it fails.
     """
-    # Get the conversation messages
     messages = db.get_conversation_messages(conversation_id)
     if not messages:
         logger.warning(f"No messages found for conversation {conversation_id}")
@@ -86,18 +100,21 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
         transcript_lines.append(f"[{timestamp}] {role}: {content}")
 
     transcript = "\n".join(transcript_lines)
-
-    # Call qwen3:14b
     prompt = CONSOLIDATION_PROMPT + transcript
 
-    logger.info(f"Consolidating conversation {conversation_id} ({len(messages)} messages)")
+    logger.info(
+        f"Consolidating conversation {conversation_id} "
+        f"({len(messages)} messages, ~{len(prompt) // 4} tokens)"
+    )
 
+    # Call the consolidation model with explicit context window
     try:
         client = ollama.Client(host=OLLAMA_HOST)
         response = client.chat(
             model=CONSOLIDATION_MODEL,
             messages=[{"role": "user", "content": prompt}],
             format="json",
+            options={"num_ctx": CONSOLIDATION_CTX},
         )
         response_text = response["message"]["content"]
     except Exception as e:
@@ -114,20 +131,24 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
 
     # Validate structure
     if "summary" not in result or "facts" not in result:
-        logger.error(f"Consolidation response missing required fields")
+        logger.error("Consolidation response missing required fields")
         return None
 
-    # Store the results
     summary = result["summary"]
     facts = result["facts"]
 
-    db.save_consolidation(conversation_id, summary, facts)
+    # Summary → DB2
+    db.save_consolidation(conversation_id, summary)
 
-    # Embed facts into ChromaDB for retrieval
+    # Facts → ChromaDB
     _embed_facts(conversation_id, facts)
 
+    # Clean up live chunks — they're replaced by facts now
+    memory._remove_live_chunks(conversation_id)
+
     logger.info(
-        f"Consolidation complete: {len(summary)} char summary, {len(facts)} facts"
+        f"Consolidation complete: summary ({len(summary)} chars), "
+        f"{len(facts)} facts → ChromaDB"
     )
 
     return result
@@ -164,6 +185,7 @@ def _embed_facts(conversation_id: str, facts: list[dict]):
 
     if ids:
         collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        logger.info(f"  Embedded {len(ids)} facts into ChromaDB")
 
 
 def consolidate_pending():

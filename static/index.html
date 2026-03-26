@@ -2,340 +2,815 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Aion</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg-deep: #0c0c0e;
+            --bg-base: #111113;
+            --bg-surface: #141416;
+            --bg-elevated: #161618;
+            --bg-hover: rgba(255,255,255,0.06);
+            --bg-active: rgba(99,140,255,0.12);
+            --border: rgba(255,255,255,0.06);
+            --border-subtle: rgba(255,255,255,0.04);
+            --text-primary: #f0f0f0;
+            --text-body: #d4d4d4;
+            --text-muted: rgba(255,255,255,0.4);
+            --text-faint: rgba(255,255,255,0.25);
+            --text-ghost: rgba(255,255,255,0.15);
+            --accent: #638CFF;
+            --accent-bg: rgba(99,140,255,0.12);
+            --accent-bg-strong: rgba(99,140,255,0.2);
+            --user-bubble: rgba(99,140,255,0.12);
+            --user-text: #c8d8f8;
+            --ai-bubble: rgba(255,255,255,0.04);
+            --green: #34D399;
+            --green-bg: rgba(52,211,153,0.08);
+            --green-text: rgba(52,211,153,0.7);
+            --amber-bg: rgba(251,191,36,0.08);
+            --amber-text: rgba(251,191,36,0.6);
+            --red: #EF4444;
+            --panel-transition: 0.25s ease;
         }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-body);
             height: 100vh;
-            display: flex;
-            flex-direction: column;
+            height: 100dvh;
+            overflow: hidden;
         }
 
-        /* Header */
-        .header {
+        /* ============================================
+           DESKTOP LAYOUT
+           ============================================ */
+        .app-shell {
             display: flex;
-            justify-content: space-between;
+            height: 100%;
+        }
+
+        /* Icon rail - always visible on desktop */
+        .icon-rail {
+            width: 56px;
+            background: var(--bg-deep);
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            padding: 12px 20px;
-            background: #242424;
-            border-bottom: 1px solid #333;
+            padding: 16px 0;
+            gap: 6px;
+            border-right: 0.5px solid var(--border);
+            flex-shrink: 0;
         }
 
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .header-info {
-            font-size: 12px;
-            color: #888;
-        }
-
-        .new-chat-btn {
-            padding: 6px 14px;
-            background: #333;
-            color: #ccc;
-            border: 1px solid #444;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .new-chat-btn:hover {
-            background: #444;
-            color: #fff;
-        }
-
-        /* Messages area */
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .message {
-            max-width: 75%;
-            padding: 12px 16px;
+        .logo {
+            width: 32px; height: 32px;
             border-radius: 8px;
-            line-height: 1.5;
-            font-size: 15px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            background: var(--accent-bg);
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 12px;
+        }
+        .logo span { font-size: 14px; font-weight: 600; color: var(--accent); }
+
+        .rail-btn {
+            width: 36px; height: 36px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; border: none; background: none; padding: 0;
+            transition: background 0.15s;
+        }
+        .rail-btn:hover { background: var(--bg-hover); }
+        .rail-btn.active { background: var(--accent-bg); }
+        .rail-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); stroke-width: 1.8; fill: none; }
+        .rail-btn.active svg { stroke: var(--accent); }
+
+        .rail-spacer { flex: 1; }
+
+        /* Left panel - conversation list */
+        .left-panel {
+            width: 240px;
+            background: var(--bg-surface);
+            border-right: 0.5px solid var(--border);
+            display: flex; flex-direction: column;
+            flex-shrink: 0;
+            transition: width var(--panel-transition), opacity 0.2s ease;
+            overflow: hidden;
+        }
+        .left-panel.collapsed { width: 0; opacity: 0; border-right: none; }
+
+        .panel-header {
+            padding: 14px 16px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .panel-title {
+            font-size: 13px; font-weight: 500;
+            color: rgba(255,255,255,0.6);
         }
 
-        .message.user {
+        .icon-btn-sm {
+            width: 24px; height: 24px;
+            border-radius: 6px; background: var(--bg-hover);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; border: none; padding: 0;
+        }
+        .icon-btn-sm svg { width: 12px; height: 12px; stroke: var(--text-muted); stroke-width: 2.5; fill: none; }
+
+        .search-box {
+            margin: 0 10px 8px;
+            padding: 7px 10px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+            border: 0.5px solid var(--border);
+            font-size: 12px; color: var(--text-faint);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .search-box input {
+            background: none; border: none; outline: none;
+            color: var(--text-body); font-size: 12px; width: 100%;
+            font-family: inherit;
+        }
+        .search-box input::placeholder { color: var(--text-faint); }
+        .search-box svg { width: 11px; height: 11px; stroke: var(--text-faint); stroke-width: 2; fill: none; flex-shrink: 0; }
+
+        .conv-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+
+        .conv-item {
+            padding: 10px; border-radius: 8px;
+            margin-bottom: 2px; cursor: pointer;
+            transition: background 0.1s;
+        }
+        .conv-item:hover { background: var(--bg-hover); }
+        .conv-item.active {
+            background: var(--accent-bg);
+            border: 0.5px solid rgba(99,140,255,0.15);
+        }
+        .conv-item-title {
+            font-size: 12px; color: rgba(255,255,255,0.6);
+            margin-bottom: 2px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .conv-item.active .conv-item-title { color: var(--text-primary); font-weight: 500; }
+        .conv-item-meta { font-size: 10px; color: var(--text-faint); }
+
+        /* Center chat area */
+        .chat-area {
+            flex: 1; display: flex; flex-direction: column; min-width: 0;
+        }
+
+        .chat-header {
+            padding: 10px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 0.5px solid var(--border);
+            background: var(--bg-elevated);
+            flex-shrink: 0;
+        }
+
+        .toggle-btn {
+            width: 28px; height: 28px;
+            border-radius: 6px; background: var(--bg-hover);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; border: none; padding: 0;
+            transition: background 0.15s;
+        }
+        .toggle-btn:hover { background: rgba(255,255,255,0.1); }
+        .toggle-btn.active { background: rgba(99,140,255,0.15); }
+        .toggle-btn svg { width: 14px; height: 14px; stroke: rgba(255,255,255,0.5); stroke-width: 2; fill: none; }
+        .toggle-btn.active svg { stroke: var(--accent); }
+
+        .status-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--green); flex-shrink: 0;
+        }
+
+        .header-title { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+        .header-meta { font-size: 11px; color: var(--text-faint); }
+
+        .btn-subtle {
+            padding: 4px 10px; border-radius: 6px;
+            font-size: 11px; color: var(--text-muted);
+            background: rgba(255,255,255,0.04);
+            cursor: pointer; border: none; font-family: inherit;
+            transition: background 0.15s;
+        }
+        .btn-subtle:hover { background: var(--bg-hover); color: var(--text-body); }
+
+        /* Messages */
+        .messages {
+            flex: 1; overflow-y: auto;
+            padding: 20px 24px;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+
+        .msg {
+            max-width: 70%; padding: 10px 16px;
+            font-size: 14px; line-height: 1.6;
+            word-wrap: break-word; white-space: pre-wrap;
+        }
+        .msg.user {
             align-self: flex-end;
-            background: #2a4a6b;
-            color: #e8f0f8;
+            background: var(--user-bubble);
+            border-radius: 18px 18px 4px 18px;
+            color: var(--user-text);
         }
-
-        .message.assistant {
+        .msg.assistant {
             align-self: flex-start;
-            background: #2d2d2d;
-            color: #e0e0e0;
+            background: var(--ai-bubble);
+            border-radius: 18px 18px 18px 4px;
+            color: var(--text-body);
+        }
+        .msg.system-msg {
+            align-self: center; background: none;
+            color: var(--text-faint); font-size: 12px;
+            font-style: italic; padding: 4px 0;
         }
 
-        .message.system-msg {
-            align-self: center;
-            background: none;
-            color: #666;
-            font-size: 13px;
-            font-style: italic;
+        .msg-meta {
+            display: flex; gap: 4px; margin-top: 4px;
+            flex-wrap: wrap; align-self: flex-start;
+        }
+
+        .search-pill {
+            padding: 3px 8px; display: inline-flex;
+            gap: 4px; align-items: center;
+            font-size: 10px; color: var(--green-text);
+            background: var(--green-bg); border-radius: 6px;
+        }
+        .search-pill svg { width: 9px; height: 9px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+        .retrieval-pill {
+            padding: 3px 8px; display: inline-flex;
+            gap: 4px; align-items: center;
+            font-size: 10px; color: var(--text-faint);
+            background: rgba(255,255,255,0.03); border-radius: 6px;
+            border: 0.5px solid var(--border-subtle);
         }
 
         /* Thinking indicator */
         .thinking {
             align-self: flex-start;
-            color: #888;
-            font-size: 14px;
-            padding: 12px 16px;
+            color: var(--text-muted);
+            font-size: 13px; padding: 10px 16px;
         }
-
-        .thinking::after {
-            content: '';
-            animation: dots 1.5s infinite;
-        }
-
+        .thinking::after { content: ''; animation: dots 1.5s infinite; }
         @keyframes dots {
             0%, 20% { content: '.'; }
             40% { content: '..'; }
             60%, 100% { content: '...'; }
         }
 
+        /* Mobile info strip */
+        .info-strip {
+            padding: 4px 16px 6px;
+            display: none; gap: 6px; flex-wrap: wrap;
+        }
+        .info-chip {
+            padding: 3px 8px; border-radius: 6px;
+            font-size: 10px; color: var(--text-faint);
+            background: rgba(255,255,255,0.03);
+            border: 0.5px solid var(--border-subtle);
+        }
+
         /* Input area */
         .input-area {
-            padding: 16px 20px;
-            background: #242424;
-            border-top: 1px solid #333;
-            display: flex;
-            gap: 10px;
+            padding: 10px 16px 12px;
+            background: var(--bg-surface);
+            border-top: 0.5px solid var(--border);
+            display: flex; gap: 10px; align-items: flex-end;
+            flex-shrink: 0;
         }
-
         .input-area textarea {
-            flex: 1;
-            padding: 10px 14px;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            border: 1px solid #444;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 15px;
-            line-height: 1.4;
-            resize: none;
-            min-height: 44px;
-            max-height: 150px;
-            outline: none;
+            flex: 1; padding: 10px 16px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 20px;
+            border: 0.5px solid rgba(255,255,255,0.08);
+            color: var(--text-body); font-size: 14px;
+            font-family: inherit; line-height: 1.4;
+            resize: none; min-height: 40px; max-height: 120px;
+            outline: none; transition: border-color 0.15s;
         }
-
-        .input-area textarea:focus {
-            border-color: #5a8ab5;
-        }
-
-        .input-area textarea::placeholder {
-            color: #666;
-        }
+        .input-area textarea:focus { border-color: rgba(99,140,255,0.4); }
+        .input-area textarea::placeholder { color: var(--text-faint); }
 
         .send-btn {
-            padding: 10px 20px;
-            background: #2a4a6b;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 15px;
-            align-self: flex-end;
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: var(--accent-bg-strong);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; flex-shrink: 0;
+            border: none; padding: 0;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .send-btn:hover { background: rgba(99,140,255,0.3); }
+        .send-btn:active { transform: scale(0.95); }
+        .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .send-btn svg { width: 16px; height: 16px; stroke: var(--accent); stroke-width: 2.5; fill: none; }
+
+        /* Right panel - context/debug */
+        .right-panel {
+            width: 260px;
+            background: var(--bg-surface);
+            border-left: 0.5px solid var(--border);
+            display: flex; flex-direction: column;
+            flex-shrink: 0; overflow-y: auto;
+            transition: width var(--panel-transition), opacity 0.2s ease;
+        }
+        .right-panel.collapsed { width: 0; opacity: 0; border-left: none; overflow: hidden; }
+
+        .ctx-section {
+            padding: 12px 14px;
+            border-bottom: 0.5px solid var(--border-subtle);
+        }
+        .ctx-label {
+            font-size: 10px; color: var(--text-faint);
+            text-transform: uppercase; letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .ctx-stat-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+        }
+        .ctx-stat-card {
+            padding: 8px; background: rgba(255,255,255,0.03);
+            border-radius: 6px; text-align: center;
+        }
+        .ctx-stat-val { font-size: 16px; font-weight: 500; color: var(--text-primary); }
+        .ctx-stat-label { font-size: 9px; color: var(--text-faint); margin-top: 1px; }
+
+        .ctx-bar {
+            height: 4px; background: rgba(255,255,255,0.06);
+            border-radius: 2px; overflow: hidden; margin-top: 8px;
+        }
+        .ctx-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+        .ctx-bar-label { font-size: 9px; color: var(--text-ghost); margin-top: 4px; }
+
+        .ctx-row {
+            display: flex; justify-content: space-between;
+            font-size: 11px; padding: 2px 0;
+        }
+        .ctx-row-name { color: var(--text-muted); }
+        .ctx-row-val { color: var(--text-faint); }
+
+        .ctx-chunk {
+            padding: 8px; background: rgba(255,255,255,0.03);
+            border-radius: 6px; margin-bottom: 6px;
+        }
+        .ctx-chunk-header {
+            display: flex; justify-content: space-between; margin-bottom: 4px;
+        }
+        .ctx-chunk-idx { font-size: 10px; color: rgba(99,140,255,0.6); }
+        .ctx-chunk-dist { font-size: 10px; color: var(--text-ghost); }
+        .ctx-chunk-text { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
+
+        .ctx-search-query {
+            font-size: 10px; color: var(--text-faint);
+            padding: 6px 8px; background: rgba(255,255,255,0.03);
+            border-radius: 4px; font-family: monospace;
         }
 
-        .send-btn:hover {
-            background: #35608a;
-        }
+        .ctx-empty { font-size: 11px; color: var(--text-faint); font-style: italic; }
 
-        .send-btn:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
+        /* ============================================
+           MOBILE LAYOUT (bottom tab bar)
+           ============================================ */
+        .mobile-tabs {
+            display: none;
+            justify-content: center; gap: 32px;
+            padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+            background: var(--bg-base);
+            border-top: 0.5px solid var(--border-subtle);
+            flex-shrink: 0;
+        }
+        .mobile-tab {
+            display: flex; flex-direction: column;
+            align-items: center; gap: 2px;
+            cursor: pointer; background: none; border: none; padding: 0;
+        }
+        .mobile-tab svg { width: 20px; height: 20px; stroke: var(--text-faint); stroke-width: 1.8; fill: none; }
+        .mobile-tab span { font-size: 9px; color: var(--text-faint); font-family: inherit; }
+        .mobile-tab.active svg { stroke: var(--accent); }
+        .mobile-tab.active span { color: var(--accent); font-weight: 500; }
+
+        @media (max-width: 768px) {
+            .icon-rail { display: none; }
+            .left-panel { display: none; }
+            .right-panel { display: none; }
+            .chat-header .toggle-btn { display: none; }
+            .mobile-tabs { display: flex; }
+            .info-strip { display: flex; }
+            .messages { padding: 16px; }
+            .msg { max-width: 85%; font-size: 14px; }
+            .input-area { padding: 8px 12px 8px; }
         }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>Aion</h1>
-    <span class="header-info" id="status"></span>
-    <div>
-        <a href="/settings" class="new-chat-btn" style="text-decoration:none; margin-right:8px;">Settings</a>
-        <button class="new-chat-btn" onclick="newConversation()">New Conversation</button>
-    </div>
-</div>
+<div class="app-shell">
+    <!-- Icon rail -->
+    <nav class="icon-rail">
+        <div class="logo"><span>A</span></div>
+        <a href="/" class="rail-btn active" title="Chat">
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </a>
+        <a href="/dashboard" class="rail-btn" title="Dashboard">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </a>
+        <a href="/memory" class="rail-btn" title="Memory">
+            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </a>
+        <div class="rail-spacer"></div>
+        <a href="/settings" class="rail-btn" title="Settings">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </a>
+    </nav>
 
-<div class="messages" id="messages"></div>
+    <!-- Left panel: conversations -->
+    <aside class="left-panel" id="leftPanel">
+        <div class="panel-header">
+            <span class="panel-title">Conversations</span>
+            <button class="icon-btn-sm" onclick="newConversation()" title="New conversation">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+        </div>
+        <div class="search-box">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" placeholder="Search..." id="convSearch" oninput="filterConversations(this.value)">
+        </div>
+        <div class="conv-list" id="convList"></div>
+    </aside>
 
-<div class="input-area">
-    <textarea
-        id="input"
-        placeholder="Type a message..."
-        rows="1"
-        onkeydown="handleKey(event)"
-        oninput="autoResize(this)"
-    ></textarea>
-    <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+    <!-- Main chat area -->
+    <main class="chat-area">
+        <header class="chat-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="toggle-btn active" id="leftToggle" onclick="togglePanel('left')" title="Conversations">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+                </button>
+                <div class="status-dot" id="statusDot"></div>
+                <span class="header-title" id="headerTitle">Aion</span>
+                <span class="header-meta" id="headerMeta"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <button class="btn-subtle" onclick="newConversation()">New conversation</button>
+                <button class="toggle-btn active" id="rightToggle" onclick="togglePanel('right')" title="Context panel">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="messages" id="messages"></div>
+
+        <!-- Mobile info strip -->
+        <div class="info-strip" id="infoStrip"></div>
+
+        <div class="input-area">
+            <textarea id="input" placeholder="Message..." rows="1"
+                onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+        </div>
+
+        <!-- Mobile tab bar -->
+        <nav class="mobile-tabs">
+            <a href="/" class="mobile-tab active">
+                <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Chat</span>
+            </a>
+            <a href="/dashboard" class="mobile-tab">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/memory" class="mobile-tab">
+                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <span>Memory</span>
+            </a>
+            <a href="/settings" class="mobile-tab">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Settings</span>
+            </a>
+        </nav>
+    </main>
+
+    <!-- Right panel: context/debug -->
+    <aside class="right-panel" id="rightPanel">
+        <div class="ctx-section" style="border-bottom:0.5px solid var(--border);">
+            <span style="font-size:11px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Context panel</span>
+        </div>
+        <div id="ctxContent">
+            <div class="ctx-section">
+                <div class="ctx-empty">Send a message to see context data.</div>
+            </div>
+        </div>
+    </aside>
 </div>
 
 <script>
-    const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('input');
-    const sendBtn = document.getElementById('sendBtn');
-    const statusEl = document.getElementById('status');
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+const infoStrip = document.getElementById('infoStrip');
+const ctxContent = document.getElementById('ctxContent');
+const convList = document.getElementById('convList');
 
-    let sending = false;
+let sending = false;
+let lastDebug = null;
+let conversations = [];
 
-    // Load current conversation on page load
-    async function loadConversation() {
-        try {
-            const res = await fetch('/api/conversation/current');
-            const data = await res.json();
+/* ---- Panel toggles ---- */
+function togglePanel(side) {
+    const panel = document.getElementById(side === 'left' ? 'leftPanel' : 'rightPanel');
+    const btn = document.getElementById(side === 'left' ? 'leftToggle' : 'rightToggle');
+    panel.classList.toggle('collapsed');
+    btn.classList.toggle('active');
+    localStorage.setItem(side + 'Panel', panel.classList.contains('collapsed') ? 'collapsed' : 'open');
+}
 
-            messagesEl.innerHTML = '';
-
-            if (data.messages && data.messages.length > 0) {
-                for (const msg of data.messages) {
-                    addMessage(msg.role, msg.content);
-                }
-            }
-
-            updateStatus('Connected');
-        } catch (err) {
-            updateStatus('Connection error');
-            console.error(err);
-        }
+function restorePanels() {
+    if (localStorage.getItem('leftPanel') === 'collapsed') {
+        document.getElementById('leftPanel').classList.add('collapsed');
+        document.getElementById('leftToggle').classList.remove('active');
     }
+    if (localStorage.getItem('rightPanel') === 'collapsed') {
+        document.getElementById('rightPanel').classList.add('collapsed');
+        document.getElementById('rightToggle').classList.remove('active');
+    }
+}
 
-    function addMessage(role, content) {
-        const div = document.createElement('div');
-        div.className = `message ${role}`;
+/* ---- Conversations sidebar ---- */
+async function loadConversations() {
+    try {
+        const res = await fetch('/api/conversations');
+        const data = await res.json();
+        conversations = data.conversations || [];
+        renderConversations(conversations);
+    } catch(e) { console.error(e); }
+}
+
+function renderConversations(list) {
+    if (!list.length) {
+        convList.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--text-faint);font-style:italic;">No conversations yet.</div>';
+        return;
+    }
+    convList.innerHTML = list.map((c, i) => {
+        const date = new Date(c.started_at);
+        const time = date.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+        const day = isToday(date) ? 'Today' : date.toLocaleDateString([], {month:'short',day:'numeric'});
+        const active = i === 0 ? 'active' : '';
+        return `<div class="conv-item ${active}" data-id="${c.id}">
+            <div class="conv-item-title">Conversation</div>
+            <div class="conv-item-meta">${day}, ${time} · ${c.message_count || 0} msgs</div>
+        </div>`;
+    }).join('');
+}
+
+function filterConversations(q) {
+    // Simple filter - for now just show all since we don't have titles
+    renderConversations(conversations);
+}
+
+function isToday(d) {
+    const t = new Date();
+    return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
+}
+
+/* ---- Messages ---- */
+async function loadConversation() {
+    try {
+        const res = await fetch('/api/conversation/current');
+        const data = await res.json();
+        messagesEl.innerHTML = '';
+        if (data.messages && data.messages.length > 0) {
+            for (const msg of data.messages) addMessage(msg.role, msg.content);
+        }
+        updateHeader(data.conversation_id, data.messages ? data.messages.length : 0);
+    } catch(e) { console.error(e); }
+}
+
+function addMessage(role, content, debug) {
+    const div = document.createElement('div');
+    if (role === 'system-msg') {
+        div.className = 'msg system-msg';
         div.textContent = content;
-        messagesEl.appendChild(div);
-        scrollToBottom();
+    } else {
+        div.className = `msg ${role}`;
+        div.textContent = content;
     }
+    messagesEl.appendChild(div);
 
-    function addSystemMessage(text) {
-        const div = document.createElement('div');
-        div.className = 'message system-msg';
-        div.textContent = text;
-        messagesEl.appendChild(div);
-        scrollToBottom();
-    }
+    // Add search pill and retrieval pills below assistant messages
+    if (role === 'assistant' && debug) {
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'msg-meta';
 
-    function showThinking() {
-        const div = document.createElement('div');
-        div.className = 'thinking';
-        div.id = 'thinking';
-        div.textContent = 'Thinking';
-        messagesEl.appendChild(div);
-        scrollToBottom();
-    }
-
-    function hideThinking() {
-        const el = document.getElementById('thinking');
-        if (el) el.remove();
-    }
-
-    function scrollToBottom() {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    function updateStatus(text) {
-        statusEl.textContent = text;
-    }
-
-    async function sendMessage() {
-        const text = inputEl.value.trim();
-        if (!text || sending) return;
-
-        sending = true;
-        sendBtn.disabled = true;
-        inputEl.value = '';
-        inputEl.style.height = 'auto';
-
-        addMessage('user', text);
-        showThinking();
-        updateStatus('Thinking...');
-
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text }),
-            });
-
-            hideThinking();
-
-            if (!res.ok) {
-                addSystemMessage('Error: could not get response');
-                updateStatus('Error');
-                return;
-            }
-
-            const data = await res.json();
-            addMessage('assistant', data.response);
-
-            const memInfo = data.memories_used > 0
-                ? `${data.memories_used} memories retrieved`
-                : 'no memories retrieved';
-            updateStatus(memInfo);
-
-        } catch (err) {
-            hideThinking();
-            addSystemMessage('Connection error');
-            updateStatus('Error');
-            console.error(err);
-        } finally {
-            sending = false;
-            sendBtn.disabled = false;
-            inputEl.focus();
+        if (debug.search && debug.search.fired) {
+            metaDiv.innerHTML += `<span class="search-pill">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                Tavily: "${debug.search.query}"</span>`;
         }
-    }
 
-    async function newConversation() {
-        try {
-            await fetch('/api/conversation/new', { method: 'POST' });
-            messagesEl.innerHTML = '';
-            addSystemMessage('New conversation started');
-            updateStatus('New conversation');
-            inputEl.focus();
-        } catch (err) {
-            console.error(err);
+        if (debug.chunks && debug.chunks.length > 0) {
+            metaDiv.innerHTML += `<span class="retrieval-pill">${debug.chunks.length} ${debug.chunks.length === 1 ? 'memory' : 'memories'}</span>`;
         }
-    }
 
-    function handleKey(event) {
-        if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            sendMessage();
+        if (debug.retrieval_skipped) {
+            metaDiv.innerHTML += `<span class="retrieval-pill">retrieval skipped</span>`;
         }
+
+        if (metaDiv.innerHTML) messagesEl.appendChild(metaDiv);
     }
 
-    function autoResize(el) {
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+    scrollToBottom();
+}
+
+function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function showThinking() {
+    const div = document.createElement('div');
+    div.className = 'thinking'; div.id = 'thinking';
+    div.textContent = 'Thinking';
+    messagesEl.appendChild(div);
+    scrollToBottom();
+}
+
+function hideThinking() {
+    const el = document.getElementById('thinking');
+    if (el) el.remove();
+}
+
+/* ---- Context panel ---- */
+function updateContext(debug) {
+    if (!debug) return;
+    lastDebug = debug;
+
+    const pct = Math.round((debug.tokens_used / debug.context_window) * 100);
+    const bd = debug.breakdown || {};
+
+    let chunksHtml = '';
+    if (debug.chunks && debug.chunks.length > 0) {
+        chunksHtml = debug.chunks.map((c, i) =>
+            `<div class="ctx-chunk">
+                <div class="ctx-chunk-header">
+                    <span class="ctx-chunk-idx">Chunk ${i}</span>
+                    <span class="ctx-chunk-dist">dist: ${c.distance}</span>
+                </div>
+                <div class="ctx-chunk-text">${escHtml(c.preview)}</div>
+            </div>`
+        ).join('');
+    } else if (debug.retrieval_skipped) {
+        chunksHtml = '<div class="ctx-empty">Retrieval skipped (trivial message)</div>';
+    } else {
+        chunksHtml = '<div class="ctx-empty">No memories retrieved</div>';
     }
 
-    // Initialize
-    loadConversation();
-    inputEl.focus();
+    let searchHtml = '';
+    if (debug.search && debug.search.fired) {
+        searchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <div style="width:6px;height:6px;border-radius:50%;background:var(--green);"></div>
+                <span style="font-size:11px;color:var(--text-muted);">Tavily search fired</span>
+            </div>
+            <div class="ctx-search-query">"${escHtml(debug.search.query)}"</div>
+            <div style="font-size:10px;color:var(--text-ghost);margin-top:6px;">${debug.search.tokens} tokens</div>`;
+    } else {
+        searchHtml = '<div class="ctx-empty">No search this request</div>';
+    }
+
+    ctxContent.innerHTML = `
+        <div class="ctx-section">
+            <div class="ctx-label">Last request</div>
+            <div class="ctx-stat-grid">
+                <div class="ctx-stat-card">
+                    <div class="ctx-stat-val">${debug.tokens_used.toLocaleString()}</div>
+                    <div class="ctx-stat-label">Tokens used</div>
+                </div>
+                <div class="ctx-stat-card">
+                    <div class="ctx-stat-val">${debug.tokens_headroom.toLocaleString()}</div>
+                    <div class="ctx-stat-label">Headroom</div>
+                </div>
+            </div>
+            <div class="ctx-bar"><div class="ctx-bar-fill" style="width:${pct}%"></div></div>
+            <div class="ctx-bar-label">${debug.tokens_used.toLocaleString()} / ${debug.context_window.toLocaleString()} context window</div>
+        </div>
+        <div class="ctx-section">
+            <div class="ctx-label">Token breakdown</div>
+            <div class="ctx-row"><span class="ctx-row-name">SOUL.md</span><span class="ctx-row-val">${bd.soul||0}</span></div>
+            <div class="ctx-row"><span class="ctx-row-name">Chunks</span><span class="ctx-row-val">${bd.chunks||0}</span></div>
+            <div class="ctx-row"><span class="ctx-row-name">Summaries</span><span class="ctx-row-val">${bd.summaries||0}</span></div>
+            <div class="ctx-row"><span class="ctx-row-name">Skills</span><span class="ctx-row-val">${bd.skills||0}</span></div>
+            <div class="ctx-row"><span class="ctx-row-name">Search</span><span class="ctx-row-val">${bd.search||0}</span></div>
+            <div class="ctx-row"><span class="ctx-row-name">History</span><span class="ctx-row-val">${bd.history||0}</span></div>
+        </div>
+        <div class="ctx-section">
+            <div class="ctx-label">Retrieved memories</div>
+            ${chunksHtml}
+        </div>
+        <div class="ctx-section" style="border-bottom:none;">
+            <div class="ctx-label">Search</div>
+            ${searchHtml}
+        </div>`;
+
+    // Mobile info strip
+    updateInfoStrip(debug);
+}
+
+function updateInfoStrip(debug) {
+    if (!debug) return;
+    let chips = [];
+    if (debug.chunks && debug.chunks.length > 0) {
+        chips.push(`${debug.chunks.length} ${debug.chunks.length===1?'memory':'memories'}`);
+    }
+    if (debug.retrieval_skipped) chips.push('retrieval skipped');
+    chips.push(`${debug.tokens_used.toLocaleString()} tokens`);
+    chips.push(`${debug.tokens_headroom.toLocaleString()} headroom`);
+    infoStrip.innerHTML = chips.map(c => `<span class="info-chip">${c}</span>`).join('');
+}
+
+function updateHeader(convId, msgCount) {
+    const meta = document.getElementById('headerMeta');
+    if (msgCount > 0) meta.textContent = `${msgCount} messages`;
+    else meta.textContent = '';
+}
+
+/* ---- Send / receive ---- */
+async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || sending) return;
+
+    sending = true;
+    sendBtn.disabled = true;
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+
+    addMessage('user', text);
+    showThinking();
+
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text }),
+        });
+        hideThinking();
+
+        if (!res.ok) {
+            addMessage('system-msg', 'Error: could not get response');
+            return;
+        }
+
+        const data = await res.json();
+        addMessage('assistant', data.response, data.debug);
+        updateContext(data.debug);
+        updateHeader(data.conversation_id, null);
+
+    } catch(e) {
+        hideThinking();
+        addMessage('system-msg', 'Connection error');
+        console.error(e);
+    } finally {
+        sending = false;
+        sendBtn.disabled = false;
+        inputEl.focus();
+    }
+}
+
+async function newConversation() {
+    try {
+        await fetch('/api/conversation/new', { method: 'POST' });
+        messagesEl.innerHTML = '';
+        addMessage('system-msg', 'New conversation started');
+        ctxContent.innerHTML = '<div class="ctx-section"><div class="ctx-empty">Send a message to see context data.</div></div>';
+        infoStrip.innerHTML = '';
+        loadConversations();
+        inputEl.focus();
+    } catch(e) { console.error(e); }
+}
+
+function handleKey(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ---- Init ---- */
+restorePanels();
+loadConversation();
+loadConversations();
+inputEl.focus();
 </script>
 
 </body>
