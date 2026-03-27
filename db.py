@@ -80,6 +80,18 @@ def init_databases():
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                url TEXT,
+                source_type TEXT NOT NULL DEFAULT 'article',
+                source_trust TEXT NOT NULL DEFAULT 'thirdhand',
+                chunk_count INTEGER DEFAULT 0,
+                summarized INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
         # Migration: add consolidated column if upgrading from Phase 1
         _migrate_working_db(conn)
 
@@ -256,6 +268,44 @@ def get_summary(conversation_id: str) -> str | None:
             (conversation_id,),
         ).fetchone()
     return row["content"] if row else None
+
+
+def save_document(doc_id: str, title: str, url: str = None,
+                  source_type: str = "article", source_trust: str = "thirdhand",
+                  chunk_count: int = 0):
+    """Record an ingested document for UI and batch processing."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(WORKING_DB) as conn:
+        conn.execute(
+            "INSERT INTO documents (id, title, url, source_type, source_trust, "
+            "chunk_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, title, url, source_type, source_trust, chunk_count, now),
+        )
+
+
+def get_unsummarized_documents() -> list[dict]:
+    """Find ingested documents that haven't been summarized yet."""
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM documents WHERE summarized = 0"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_document_summarized(doc_id: str, summary: str):
+    """Save summary and mark document as summarized."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(WORKING_DB) as conn:
+        summary_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT OR REPLACE INTO summaries (id, conversation_id, content, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (summary_id, doc_id, summary, now),
+        )
+        conn.execute(
+            "UPDATE documents SET summarized = 1 WHERE id = ?",
+            (doc_id,),
+        )
 
 
 def get_recent_summaries(limit: int = 5) -> list[dict]:

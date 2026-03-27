@@ -47,3 +47,14 @@ RETRIEVAL_RESULTS = 5  # number of chunks to retrieve per search
 
 # --- Search Rate Limiting ---
 SEARCH_MONTHLY_LIMIT = 1000  # Tavily free tier: 1000/month
+SEARCH_FETCH_MAX_CHARS = 4000  # Max chars to include from fetched page
+
+# --- Document Ingestion ---
+INGEST_CHUNK_SIZE = 1500       # chars per chunk (roughly 375 tokens)
+INGEST_CHUNK_OVERLAP = 200     # chars overlap between chunks
+
+# --- Retrieval-Aware Search Gating ---
+# If any chunk scores below this distance, memory is confident — skip web search.
+# Lower distance = closer match. Cosine distance: 0.0 = identical, 2.0 = opposite.
+# 0.35 is conservative — only strong matches suppress search.
+MEMORY_CONFIDENCE_THRESHOLD = 0.35

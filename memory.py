@@ -1,19 +1,19 @@
 """
 Aion Memory Layer
 
-ChromaDB handles vector search — converting conversation chunks into
-searchable embeddings so the entity can find relevant memories.
+ChromaDB is the entity's memory. Everything searchable lives here
+as conversation chunks — the raw exchanges with full context.
 
-Two types of chunks:
-- Live chunks: created every N messages during active conversation.
-  Rough but immediately searchable. Tagged with is_live=true.
-- Final chunks: created when a conversation ends. Overlapping windows
-  for better retrieval. Replace the live chunks.
+Chunks are created during active conversations every N messages
+and stay permanently. When a conversation ends, any remaining
+unchunked messages get one final chunk. Nothing is deleted.
 
-The entity can search its memories at any time, even mid-conversation.
+All experience types (conversations, research, journals, Moltbook)
+flow through the same chunking and embedding pipeline.
 """
 
 import chromadb
+from datetime import datetime, timezone
 from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 
 from config import (
@@ -21,8 +21,6 @@ from config import (
     OLLAMA_HOST,
     EMBED_MODEL,
     LIVE_CHUNK_INTERVAL,
-    CHUNK_SIZE,
-    CHUNK_OVERLAP,
     RETRIEVAL_RESULTS,
 )
 
@@ -67,7 +65,6 @@ def _messages_to_text(messages: list[dict]) -> str:
         role = msg.get("role", "unknown")
         content = msg.get("content", "")
 
-        # Format timestamp as readable
         readable_time = _format_timestamp(timestamp)
         lines.append(f"[{readable_time}] {role}: {content}")
     return "\n".join(lines)
@@ -78,7 +75,6 @@ def _format_timestamp(iso_timestamp: str) -> str:
     if not iso_timestamp:
         return "unknown time"
     try:
-        from datetime import datetime
         dt = datetime.fromisoformat(iso_timestamp)
         return dt.strftime("%B %d, %Y at %I:%M %p")
     except (ValueError, TypeError):
@@ -90,91 +86,51 @@ def should_create_live_chunk(message_count: int) -> bool:
     return message_count > 0 and message_count % LIVE_CHUNK_INTERVAL == 0
 
 
-def create_live_chunk(conversation_id: str, messages: list[dict], chunk_index: int):
+def create_live_chunk(
+    conversation_id: str,
+    messages: list[dict],
+    chunk_index: int,
+    source_type: str = "conversation",
+    source_trust: str = "firsthand",
+):
     """
-    Create a live chunk from recent messages during an active conversation.
-    These are rough — just enough to be searchable mid-conversation.
-    They get replaced by clean final chunks when the conversation ends.
+    Create a chunk from messages and embed it into ChromaDB.
+
+    Chunks are permanent — they are the entity's memory.
+
+    Args:
+        conversation_id: which conversation this came from
+        messages: the messages to chunk
+        chunk_index: position within the conversation
+        source_type: what kind of experience (conversation, research,
+                     journal, moltbook, article, creative, observation)
+        source_trust: trustworthiness (firsthand, secondhand, thirdhand)
     """
     if not messages:
         return
 
     collection = _get_collection()
-    chunk_id = f"{conversation_id}_live_{chunk_index}"
+    chunk_id = f"{conversation_id}_chunk_{chunk_index}"
     text = _messages_to_text(messages)
 
-    # Upsert so we can update if called again with same index
     collection.upsert(
         ids=[chunk_id],
         documents=[text],
         metadatas=[{
             "conversation_id": conversation_id,
-            "is_live": "true",
             "chunk_index": chunk_index,
             "message_count": len(messages),
+            "source_type": source_type,
+            "source_trust": source_trust,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }],
     )
-
-
-def create_final_chunks(conversation_id: str, all_messages: list[dict]):
-    """
-    Create clean overlapping chunks for a completed conversation.
-    Removes any live chunks first, then creates proper overlapping windows.
-    """
-    collection = _get_collection()
-
-    # Remove live chunks for this conversation
-    _remove_live_chunks(conversation_id)
-
-    if not all_messages:
-        return
-
-    # Create overlapping windows
-    chunks = []
-    start = 0
-    while start < len(all_messages):
-        end = min(start + CHUNK_SIZE, len(all_messages))
-        chunk_messages = all_messages[start:end]
-        chunks.append((start, chunk_messages))
-
-        # Move forward by (chunk_size - overlap)
-        step = CHUNK_SIZE - CHUNK_OVERLAP
-        if step < 1:
-            step = 1
-        start += step
-
-        # If we've included the last message, stop
-        if end >= len(all_messages):
-            break
-
-    # Embed all chunks
-    ids = []
-    documents = []
-    metadatas = []
-
-    for i, (start_idx, chunk_messages) in enumerate(chunks):
-        chunk_id = f"{conversation_id}_final_{i}"
-        text = _messages_to_text(chunk_messages)
-
-        ids.append(chunk_id)
-        documents.append(text)
-        metadatas.append({
-            "conversation_id": conversation_id,
-            "is_live": "false",
-            "chunk_index": i,
-            "start_message": start_idx,
-            "message_count": len(chunk_messages),
-        })
-
-    if ids:
-        collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
 
 
 def _remove_live_chunks(conversation_id: str):
     """Remove all live chunks for a conversation."""
     collection = _get_collection()
 
-    # Query for live chunks belonging to this conversation
     try:
         results = collection.get(
             where={
@@ -187,8 +143,75 @@ def _remove_live_chunks(conversation_id: str):
         if results["ids"]:
             collection.delete(ids=results["ids"])
     except Exception:
-        # If no results or collection empty, nothing to remove
         pass
+
+
+def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """
+    Split text into chunks at paragraph boundaries.
+
+    Tries to break at double newlines (paragraphs), falls back to
+    single newlines, falls back to hard cut at chunk_size.
+    Each chunk overlaps with the next by `overlap` characters
+    to preserve context across boundaries.
+    """
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+
+        if end >= len(text):
+            chunks.append(text[start:])
+            break
+
+        # Try to break at a paragraph boundary
+        break_point = text.rfind("\n\n", start, end)
+        if break_point == -1 or break_point <= start:
+            # Try single newline
+            break_point = text.rfind("\n", start, end)
+        if break_point == -1 or break_point <= start:
+            # Hard cut
+            break_point = end
+
+        chunks.append(text[start:break_point])
+        start = break_point - overlap
+        if start < 0:
+            start = 0
+
+    return chunks
+
+
+def ingest_document(doc_id: str, text: str, title: str,
+                    source_type: str = "article",
+                    source_trust: str = "thirdhand") -> int:
+    """
+    Chunk and embed a document into ChromaDB.
+
+    Returns the number of chunks created.
+    """
+    from config import INGEST_CHUNK_SIZE, INGEST_CHUNK_OVERLAP
+
+    chunks = chunk_text(text, INGEST_CHUNK_SIZE, INGEST_CHUNK_OVERLAP)
+
+    for i, chunk_text_piece in enumerate(chunks):
+        # Prepend title to first chunk for better embedding context
+        text_to_store = chunk_text_piece
+        if i == 0:
+            text_to_store = f"{title}\n\n{chunk_text_piece}"
+
+        create_live_chunk(
+            conversation_id=doc_id,
+            messages=[{"role": "system", "content": text_to_store, "timestamp": ""}],
+            chunk_index=i,
+            source_type=source_type,
+            source_trust=source_trust,
+        )
+
+    return len(chunks)
 
 
 def search(query: str, n_results: int = RETRIEVAL_RESULTS,
@@ -200,21 +223,19 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
     - text: the chunk content
     - conversation_id: which conversation it came from
     - distance: how close the match is (lower = better)
+    - source_type: what kind of experience
+    - source_trust: how trustworthy
     """
     collection = _get_collection()
 
-    # Check if collection has any documents
     if collection.count() == 0:
         return []
 
-    # Build the query
     query_params = {
         "query_texts": [query],
         "n_results": min(n_results, collection.count()),
     }
 
-    # Optionally exclude current conversation from results
-    # (we already have it in context)
     if exclude_conversation_id:
         query_params["where"] = {
             "conversation_id": {"$ne": exclude_conversation_id}
@@ -225,14 +246,16 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
     except Exception:
         return []
 
-    # Format results
     memories = []
     if results and results["documents"] and results["documents"][0]:
         for i, doc in enumerate(results["documents"][0]):
+            meta = results["metadatas"][0][i] if results["metadatas"] else {}
             memories.append({
                 "text": doc,
-                "conversation_id": results["metadatas"][0][i].get("conversation_id", ""),
+                "conversation_id": meta.get("conversation_id", ""),
                 "distance": results["distances"][0][i] if results["distances"] else None,
+                "source_type": meta.get("source_type", "conversation"),
+                "source_trust": meta.get("source_trust", "firsthand"),
             })
 
     return memories

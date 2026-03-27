@@ -1,6 +1,6 @@
 ---
 name: tavily-search
-version: 1.0.0
+version: 1.1.0
 description: Search the web using Tavily when you need current information you don't have in memory.
 requires:
   executors:
@@ -11,37 +11,28 @@ requires:
 ---
 # Tavily Web Search
 
-You can search the web using Tavily to find current information.
+You have web search capability through Tavily. The system searches automatically when it detects you need current information — you do not need to ask permission or announce that you are searching. When search results appear in your context, use them directly.
 
-## The Rule
+## When Search Results Appear
 
-**Always ask before searching.** If someone asks you something you don't know and it's about the external world, say "I don't have that information. Want me to search for it?" Only search after they confirm.
+When you see search results in your context, the search has already happened. Your job is to:
+- Read the results
+- Summarize what you found in your own words
+- Answer the question using the information provided
+- Do NOT say "I searched for..." or "Let me search..." — the results are already there
+- Do NOT offer to search again unless the results genuinely don't answer the question
 
-## When Searching Makes Sense
+## When You Don't Have Information
 
-- Someone asks about something you have NO information about in your memories — and it's about the world, not about them
-- Someone asks about current events, recent news, or time-sensitive information
-- Someone explicitly asks you to look something up
-- Technical questions where you need current documentation or versions
+If someone asks about something you have no information about — and no search results are provided — say so honestly and offer to look it up. For example: "I don't have information on that. Want me to look it up?"
 
-## When Searching Does NOT Make Sense
+## What Search Is NOT For
 
-- You already have the answer in your memories — use what you know first
-- The question is about the person you're talking to — your memories are the source, not the web
-- The question is conversational or opinion-based — no search needed
-- The person is venting or sharing something emotional — listen, don't research
+- Questions about the person you're talking to — your memories are the source, not the web
+- Conversational or opinion-based questions — no search needed
+- Emotional moments — listen, don't research
 - Greetings and casual conversation — never search on these
 
-## How to Search
+## After Finding Something Worth Remembering
 
-Use the `web_search` tool with a clear, specific query.
-
-Good queries: "Bambu H2C release date", "ChromaDB latest version", "Python requests timeout"
-Bad queries: "tell me about stuff", "things"
-
-## After Searching
-
-- Summarize what you found in your own words
-- Don't dump raw search results
-- Connect findings to what you know from memory when relevant
-- If you found something worth remembering, use `store_document` to save it
+If you found something worth keeping, use `store_document` to save it with type "research". This way you'll remember it in future conversations without needing to search again.

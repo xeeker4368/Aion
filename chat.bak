@@ -3,7 +3,8 @@ Aion Chat Layer
 
 Handles communication with Ollama and assembles what the model sees:
 - Identity (soul.md)
-- Remembered experiences (conversation chunks from ChromaDB)
+- Remembered experiences (retrieved from ChromaDB)
+- Recent experience summaries
 - Available skills
 - Current conversation history (trimmed to fit the context window)
 
@@ -51,26 +52,27 @@ def load_soul() -> str:
 
 def build_system_prompt(
     retrieved_chunks: list[dict],
+    summaries: list[dict] = None,
     skill_descriptions: str = "",
     search_results: str = None,
-    ingest_result: str = None,
 ) -> str:
     """
-    Assemble the system prompt from identity and memory.
+    Assemble the system prompt from identity and all memory layers.
 
     The model sees (in order):
     1. Identity (soul.md)
-    2. Remembered experiences (conversation chunks from ChromaDB)
-    3. Available skills
-    4. Search results (if any)
-    5. Behavioral guidance
+    2. Remembered experiences (retrieved from ChromaDB — facts and chunks)
+    3. Recent experience summaries
+    4. Available skills
+    5. Search results (if any)
+    6. Behavioral guidance
     """
     soul = load_soul()
     parts = [soul]
 
     tokens_remaining = RETRIEVAL_TOKEN_BUDGET
 
-    # --- Remembered experiences (conversation chunks from ChromaDB) ---
+    # --- Remembered experiences (from ChromaDB) ---
     if retrieved_chunks:
         chunk_texts = []
         for chunk in retrieved_chunks:
@@ -84,8 +86,28 @@ def build_system_prompt(
         if chunk_texts:
             chunks_block = "\n\n---\n\n".join(chunk_texts)
             parts.append(
-                f"\n\nThese are your own experiences and memories:\n\n"
+                f"\n\n## What You Remember\n\n"
+                f"These are your own experiences and memories:\n\n"
                 f"{chunks_block}"
+            )
+
+    # --- Recent experience summaries ---
+    if summaries:
+        summary_texts = []
+        for summary in summaries:
+            content = summary.get("content", "")
+            summary_tokens = _estimate_tokens(content)
+            if summary_tokens > tokens_remaining:
+                break
+            summary_texts.append(content)
+            tokens_remaining -= summary_tokens
+
+        if summary_texts:
+            summaries_block = "\n".join(f"- {s}" for s in summary_texts)
+            parts.append(
+                f"\n\n## Recent Experiences\n\n"
+                f"What has happened recently:\n\n"
+                f"{summaries_block}"
             )
 
     # --- Skills ---
@@ -95,25 +117,22 @@ def build_system_prompt(
     # --- Search results (injected by server when relevant) ---
     if search_results:
         parts.append(
-            f"\n\nThe following are web search results for the current question. "
-            f"Use these to answer — summarize in your own words, do not dump raw results.\n\n"
+            f"\n\n## Search Results\n\n"
+            f"The following are web search results relevant to the current question. "
+            f"Summarize these in your own words — do not dump raw results.\n\n"
             f"{search_results}"
-        )
-
-    # --- Ingestion result (injected by server when a document was stored) ---
-    if ingest_result:
-        parts.append(
-            f"\n\nA document was just saved to your memory: {ingest_result}"
         )
 
     # --- Behavioral guidance ---
     parts.append("""
 
+## How You Handle Information
+
 You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.
 
-When search results appear above, you already have the answer. Use them. Summarize in your own words. Do not offer to search when results are already provided.
+Your memories and knowledge are your primary sources. When you don't know something about the external world (software, news, products, events), say so and offer to search. For example: "I don't have information on that. Would you like me to search for it?"
 
-When you genuinely don't have information and no search results are provided, say so and offer to look it up.
+When search results are provided above, use them to answer the question. Summarize in your own words.
 
 Never show raw data, timestamps, IDs, or technical artifacts from your memory system in conversation. Speak naturally about what you remember, as a person would.""")
 

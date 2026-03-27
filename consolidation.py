@@ -1,16 +1,14 @@
 """
 Aion Consolidation
 
-Reads completed conversations and produces two things:
-- A summary: natural language account of what happened (→ DB2)
-- Facts: individual pieces of knowledge worth remembering (→ ChromaDB)
+Reads completed conversations and produces summaries for the UI.
+Summaries are for Lyle's visibility (dashboard, memory browser) —
+they never go into the entity's system prompt.
 
-Uses qwen3:14b for extraction. Runs as a batch process — not
-real-time, so speed doesn't matter.
+The entity's memory is the raw conversation chunks in ChromaDB.
+No fact extraction. No ChromaDB writes. Summaries go to DB2 only.
 
-One prompt, one pass. No structured extraction pipeline.
-The model reads the conversation and reasons about it naturally.
-(Principle 7: the model is smart, stop fighting it.)
+Uses qwen3:14b. Runs as a batch process — not real-time.
 """
 
 import json
@@ -19,54 +17,27 @@ import logging
 import ollama
 
 import db
-import memory
 from config import OLLAMA_HOST, CONSOLIDATION_MODEL
 
 logger = logging.getLogger("aion.consolidation")
 
 # Explicit context window for the consolidation model.
-# qwen3:14b may default to 4096 which truncates longer conversations.
-# 16384 gives room for full transcripts + prompt.
 CONSOLIDATION_CTX = 16384
 
-CONSOLIDATION_PROMPT = """Read this conversation carefully. Extract what matters for long-term memory.
+CONSOLIDATION_PROMPT = """Read this conversation carefully. Write a brief summary of what happened.
 
-Produce two things:
+The summary should be 2-4 sentences. Capture:
+- The important topics discussed
+- Any decisions made
+- Emotional tone if relevant
+- Anything that changed or was corrected
 
-1. SUMMARY: A natural language account of what happened. 2-4 sentences. Capture the important topics, decisions made, emotional tone if relevant, and anything that changed.
-
-2. FACTS: Individual pieces of knowledge worth remembering. Each fact should be:
-- 1-3 sentences, one topic per fact
-- Written in natural language with context
-
-Rules for facts:
-- Use actual names of people (e.g., "Lyle" not "the user", "Sarah" not "the user's wife")
-- Include WHO said or established the fact
-- Include WHEN (use the timestamps from the conversation)
-- Do NOT include assistant reactions or conversational filler as facts
-- Do NOT merge unrelated facts into one entry
-- If something was CORRECTED in this conversation, note both the old and new information
-- If a fact references something from a previous conversation, note that connection
-
-Give each fact an importance score:
-- 1-3: Minor detail, conversational filler
-- 4-6: Useful context, preferences, opinions
-- 7-9: Core facts about identity, relationships, important events
-- 10: Critical corrections or foundational information
+Write it like you're telling someone what was discussed. Use actual names when they appear in the transcript.
 
 Respond with valid JSON in exactly this format:
 {
-  "summary": "Your summary here.",
-  "facts": [
-    {
-      "content": "The fact in natural language with names and context.",
-      "importance": 7,
-      "category": "personal"
-    }
-  ]
+  "summary": "Your summary here."
 }
-
-Categories: personal, technical, project, relationship, work, preference, correction, idea
 
 Here is the conversation transcript:
 
@@ -77,14 +48,11 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
     """
     Run consolidation on a single conversation.
 
-    Flow:
-    1. Read conversation from DB2
-    2. Send to qwen3:14b for one-step extraction
-    3. Save summary to DB2
-    4. Embed facts into ChromaDB
-    5. Clean up live chunks (replaced by facts)
+    Produces a summary for the UI. That's it.
+    Conversation chunks in ChromaDB are the entity's memory —
+    this process does not touch them.
 
-    Returns the consolidation result or None if it fails.
+    Returns the result or None if it fails.
     """
     messages = db.get_conversation_messages(conversation_id)
     if not messages:
@@ -129,86 +97,106 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
         logger.error(f"Raw response: {response_text[:500]}")
         return None
 
-    # Validate structure
-    if "summary" not in result or "facts" not in result:
-        logger.error("Consolidation response missing required fields")
+    if "summary" not in result:
+        logger.error("Consolidation response missing summary field")
         return None
 
     summary = result["summary"]
-    facts = result["facts"]
 
-    # Summary → DB2
+    # Summary → DB2 (for UI only, never goes to entity)
     db.save_consolidation(conversation_id, summary)
 
-    # Facts → ChromaDB
-    _embed_facts(conversation_id, facts)
-
-    # Clean up live chunks — they're replaced by facts now
-    memory._remove_live_chunks(conversation_id)
-
     logger.info(
-        f"Consolidation complete: summary ({len(summary)} chars), "
-        f"{len(facts)} facts → ChromaDB"
+        f"Consolidation complete: summary ({len(summary)} chars) → DB2"
     )
 
     return result
 
 
-def _embed_facts(conversation_id: str, facts: list[dict]):
-    """Embed extracted facts into ChromaDB for retrieval."""
-    if not facts:
+def summarize_documents():
+    """Summarize any ingested documents that haven't been summarized yet."""
+    pending = db.get_unsummarized_documents()
+
+    if not pending:
+        logger.info("No documents pending summarization.")
         return
 
-    collection = memory._get_collection()
+    logger.info(f"Found {len(pending)} documents to summarize.")
 
-    ids = []
-    documents = []
-    metadatas = []
+    for doc in pending:
+        doc_id = doc["id"]
+        title = doc["title"]
+        url = doc.get("url", "")
 
-    for i, fact in enumerate(facts):
-        fact_id = f"{conversation_id}_fact_{i}"
-        content = fact.get("content", "")
-        importance = fact.get("importance", 5)
-        category = fact.get("category", "general")
-
-        if not content:
+        # Get the chunks from ChromaDB for this document
+        collection = None
+        try:
+            import memory
+            memory.init_memory()
+            collection = memory._get_collection()
+            results = collection.get(
+                where={"conversation_id": {"$eq": doc_id}},
+            )
+        except Exception as e:
+            logger.error(f"Could not retrieve chunks for {doc_id}: {e}")
             continue
 
-        ids.append(fact_id)
-        documents.append(content)
-        metadatas.append({
-            "conversation_id": conversation_id,
-            "type": "fact",
-            "importance": importance,
-            "category": category,
-        })
+        if not results or not results["documents"]:
+            logger.warning(f"No chunks found for document {doc_id}")
+            continue
 
-    if ids:
-        collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
-        logger.info(f"  Embedded {len(ids)} facts into ChromaDB")
+        # Combine chunk text for summarization
+        full_text = "\n\n".join(results["documents"])
+
+        prompt = (
+            f"Read this document and write a 2-4 sentence summary of what it covers.\n"
+            f"Title: {title}\n"
+            f"URL: {url}\n\n"
+            f"{full_text[:12000]}"  # Truncate to fit context window
+        )
+
+        logger.info(
+            f"Summarizing document {doc_id} ({title}), "
+            f"~{len(prompt) // 4} tokens"
+        )
+
+        try:
+            client = ollama.Client(host=OLLAMA_HOST)
+            response = client.chat(
+                model=CONSOLIDATION_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                options={"num_ctx": CONSOLIDATION_CTX},
+            )
+            summary = response["message"]["content"].strip()
+        except Exception as e:
+            logger.error(f"Summarization failed for {doc_id}: {e}")
+            continue
+
+        db.mark_document_summarized(doc_id, summary)
+        logger.info(f"  Summarized: {title} -> {len(summary)} chars")
 
 
 def consolidate_pending():
-    """Find and consolidate all conversations that need it."""
+    """Find and process all pending conversations and documents."""
+    # Conversations
     pending = db.get_unconsolidated_conversations()
-
     if not pending:
         logger.info("No conversations pending consolidation.")
-        return
+    else:
+        logger.info(f"Found {len(pending)} conversations to consolidate.")
+        for conv in pending:
+            result = consolidate_conversation(conv["id"])
+            if result:
+                logger.info(f"  ✓ {conv['id']}")
+            else:
+                logger.warning(f"  ✗ {conv['id']} failed")
 
-    logger.info(f"Found {len(pending)} conversations to consolidate.")
-
-    for conv in pending:
-        result = consolidate_conversation(conv["id"])
-        if result:
-            logger.info(f"  ✓ {conv['id']}")
-        else:
-            logger.warning(f"  ✗ {conv['id']} failed")
+    # Documents
+    summarize_documents()
 
 
 if __name__ == "__main__":
-    """Run consolidation on all pending conversations."""
+    """Run consolidation on all pending conversations and documents."""
     logging.basicConfig(level=logging.INFO)
     db.init_databases()
-    memory.init_memory()
     consolidate_pending()

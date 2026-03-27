@@ -9,14 +9,13 @@ and whether anything was truncated.
 import logging
 import os
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 
 from config import DATA_DIR
 
 DEBUG_LOG_DIR = DATA_DIR / "logs"
 DEBUG_LOG_FILE = DEBUG_LOG_DIR / "debug.log"
-MAX_LOG_SIZE = 5 * 1024 * 1024   # 5MB per file
-LOG_BACKUP_COUNT = 3              # Keep 3 rotated files
+LOG_BACKUP_DAYS = 30              # Keep 30 days of logs
 
 _debug_logger = None
 
@@ -44,11 +43,12 @@ def init_debug():
 
     # Avoid adding duplicate handlers on re-init
     if not _debug_logger.handlers:
-        handler = RotatingFileHandler(
+        handler = TimedRotatingFileHandler(
             str(DEBUG_LOG_FILE),
-            maxBytes=MAX_LOG_SIZE,
-            backupCount=LOG_BACKUP_COUNT,
+            when="midnight",
+            backupCount=LOG_BACKUP_DAYS,
         )
+        handler.suffix = "%Y-%m-%d"
         handler.setFormatter(logging.Formatter("%(asctime)s\t%(message)s"))
         _debug_logger.addHandler(handler)
 
@@ -166,7 +166,7 @@ def log_request(request_data: dict):
     console_lines = [
         f'--- REQUEST #{d["message_number"]} | {readable_time} ---',
         f"User: {user_preview}",
-        f'Context: SOUL={d["soul_tokens"]} Chunks={d["chunks_count"]}({d["chunks_tokens"]}t) Summaries={d["summaries_count"]}({d["summaries_tokens"]}t) Skills={d["skills_tokens"]}t{" [RETRIEVAL SKIPPED]" if d.get("retrieval_skipped") else ""}',
+        f'Context: SOUL={d["soul_tokens"]} Chunks={d["chunks_count"]}({d["chunks_tokens"]}t) Skills={d["skills_tokens"]}t{" [RETRIEVAL SKIPPED]" if d.get("retrieval_skipped") else ""}',
         f"Search: {search_line}",
         f'History: {d["conversation_messages_sent"]}/{d["conversation_messages_total"]} messages ({d["conversation_history_tokens"]}t){trim_warning}',
         f'TOTAL: {d["total_tokens"]}/{d["context_window"]} tokens | Headroom: {d["headroom"]}t{budget_warning}',

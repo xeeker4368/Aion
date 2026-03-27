@@ -23,6 +23,8 @@ Message lifecycle:
 """
 
 import logging
+import re as _re
+import uuid as _uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +66,21 @@ async def lifespan(app: FastAPI):
     vault.init_secrets()
     executors.init_executors()
     skills.init_skills()
+
+    # Chunk remaining messages for conversations that ended without final chunking
+    ended_unchunked = db.get_unchunked_ended_conversations()
+    for conv in ended_unchunked:
+        conv_msg_count = conv.get("message_count", 0)
+        remaining = conv_msg_count % LIVE_CHUNK_INTERVAL
+        if remaining > 0:
+            messages = db.get_conversation_messages(conv["id"])
+            if messages:
+                chunk_messages = messages[-remaining:]
+                chunk_index = conv_msg_count // LIVE_CHUNK_INTERVAL
+                memory.create_live_chunk(conv["id"], chunk_messages, chunk_index)
+                logger.info(
+                    f"Startup: chunked {remaining} remaining messages for {conv['id']}"
+                )
 
     # Check for conversations that need consolidation
     global _active_conversation_id
@@ -123,7 +140,7 @@ class SkillInstallRequest(BaseModel):
 # ============================================================
 
 def _end_active_conversation():
-    """End the current conversation. Consolidation runs separately."""
+    """End the current conversation and chunk any remaining messages."""
     global _active_conversation_id
 
     if _active_conversation_id is None:
@@ -132,11 +149,24 @@ def _end_active_conversation():
     conv_id = _active_conversation_id
     msg_count = db.get_conversation_message_count(conv_id)
 
-    db.end_conversation(conv_id)
-
     if msg_count > 0:
-        logger.info(f"Conversation {conv_id} ended ({msg_count} messages, pending consolidation)")
+        # Chunk any messages beyond the last live chunk boundary
+        remaining = msg_count % LIVE_CHUNK_INTERVAL
+        if remaining > 0:
+            messages = db.get_conversation_messages(conv_id)
+            chunk_messages = messages[-remaining:]
+            chunk_index = msg_count // LIVE_CHUNK_INTERVAL
+
+            memory.create_live_chunk(conv_id, chunk_messages, chunk_index)
+            logger.info(
+                f"Final chunk {chunk_index} created for conversation {conv_id} "
+                f"({remaining} remaining messages)"
+            )
+
+        db.end_conversation(conv_id)
+        logger.info(f"Conversation {conv_id} ended ({msg_count} messages)")
     else:
+        db.end_conversation(conv_id)
         logger.info(f"Conversation {conv_id} ended (empty)")
 
     _active_conversation_id = None
@@ -316,6 +346,11 @@ def _is_trivial_message(message: str) -> bool:
         "whats up", "what's up", "wassup",
         "how are you", "how's it going", "how are things",
         "hows it going", "how you doing", "how ya doing",
+        # Extended greetings
+        "how are you today", "hows it going today",
+        "how are you doing", "how are you doing today",
+        "how you doing today", "whats going on",
+        "what's going on", "not much", "nm",
         # Confirmations
         "ok", "okay", "sure", "thanks", "thank you",
         "got it", "cool", "nice", "great", "awesome",
@@ -331,7 +366,7 @@ def _is_trivial_message(message: str) -> bool:
 
 
 def _run_server_side_search(query: str) -> str:
-    """Run a web search server-side and return formatted results."""
+    """Run a web search server-side and fetch the top result's full page."""
     if not search_limiter.can_search():
         usage = search_limiter.get_usage()
         logger.warning(
@@ -343,7 +378,132 @@ def _run_server_side_search(query: str) -> str:
     logger.info(f"Server-side search: {query}")
     result = executors.execute("web_search", {"query": query})
     search_limiter.record_search()
+
+    # Chain: fetch the top result's full page for richer context
+    fetched = _fetch_top_result(result)
+    if fetched:
+        result = result + "\n\n--- Full Page Content (top result) ---\n\n" + fetched
+
     return result
+
+
+def _fetch_top_result(search_results: str) -> str | None:
+    """
+    Extract the first URL from search results and fetch its content.
+    Returns the page text, or None if fetch fails or no URL found.
+    """
+    from config import SEARCH_FETCH_MAX_CHARS
+
+    # Find the first URL in the search results
+    for line in search_results.split("\n"):
+        if line.startswith("URL: ") and line.strip() != "URL:":
+            url = line[5:].strip()
+            if url:
+                logger.info(f"Fetching top result: {url}")
+                content = executors.execute(
+                    "web_fetch",
+                    {"url": url, "max_chars": SEARCH_FETCH_MAX_CHARS},
+                )
+                # Don't return error messages as content
+                if content and not content.startswith("Failed to fetch"):
+                    return content
+                else:
+                    logger.warning(f"Fetch failed for {url}: {content}")
+                    return None
+    return None
+
+
+def _memory_has_answer(retrieved_chunks: list[dict]) -> bool:
+    """
+    Check if retrieved memory chunks are strong enough to skip web search.
+    Returns True if any chunk has a distance score below the confidence threshold.
+    """
+    from config import MEMORY_CONFIDENCE_THRESHOLD
+
+    for chunk in retrieved_chunks:
+        distance = chunk.get("distance")
+        if distance is not None and distance < MEMORY_CONFIDENCE_THRESHOLD:
+            return True
+    return False
+
+
+def _detect_ingest(message: str) -> str | None:
+    """
+    Detect if the user wants to ingest a URL.
+    Returns the URL if found, None otherwise.
+    """
+    msg = message.lower().strip()
+
+    ingest_signals = [
+        "remember this", "save this", "store this",
+        "read this", "ingest this", "absorb this",
+        "add this to your memory", "add this to memory",
+        "remember this article", "remember this page",
+        "save this article", "save this page",
+        "read and remember", "learn this",
+    ]
+
+    has_signal = any(signal in msg for signal in ingest_signals)
+    if not has_signal:
+        return None
+
+    # Extract URL from the message
+    url_pattern = r'https?://[^\s<>"\']+'
+    match = _re.search(url_pattern, message)
+    if match:
+        return match.group(0).rstrip(".,;:!?")
+    return None
+
+
+def _ingest_url(url: str) -> str:
+    """
+    Fetch a URL, chunk it, store in ChromaDB, record in DB2.
+    Returns a confirmation string to inject into the system prompt.
+    """
+    # Fetch the page (use a larger limit than default for ingestion)
+    content = executors.execute("web_fetch", {"url": url, "max_chars": 20000})
+
+    if content.startswith("Failed to fetch"):
+        return f"Could not fetch {url}: {content}"
+
+    if len(content.strip()) < 100:
+        return f"The page at {url} had very little readable content."
+
+    # Extract a title from the first line or use the URL
+    lines = content.strip().split("\n")
+    title = lines[0][:120] if lines else url
+
+    # Create a document ID and store
+    doc_id = str(_uuid.uuid4())
+
+    # Chunk and embed into ChromaDB
+    chunk_count = memory.ingest_document(
+        doc_id=doc_id,
+        text=content,
+        title=title,
+        source_type="article",
+        source_trust="thirdhand",
+    )
+
+    # Record in DB2 for UI and batch summarization
+    db.save_document(
+        doc_id=doc_id,
+        title=title,
+        url=url,
+        source_type="article",
+        source_trust="thirdhand",
+        chunk_count=chunk_count,
+    )
+
+    logger.info(
+        f"Ingested {url}: {len(content)} chars, {chunk_count} chunks, doc_id={doc_id}"
+    )
+
+    return (
+        f"Document saved to memory: \"{title}\" ({chunk_count} sections, "
+        f"{len(content)} characters). You can now recall information from this "
+        f"article in future conversations."
+    )
 
 
 # ============================================================
@@ -372,22 +532,24 @@ async def handle_chat(request: ChatRequest):
     # 3. Retrieve memories (skip for greetings and trivial messages)
     if _is_trivial_message(request.message):
         retrieved_chunks = []
-        summaries = []
         logger.info("Retrieval: SKIPPED (trivial message)")
     else:
         retrieved_chunks = memory.search(
             query=request.message,
             exclude_conversation_id=conversation_id,
         )
-        summaries = db.get_recent_summaries(limit=5)
-        logger.info(
-            f"Retrieved {len(retrieved_chunks)} chunks, "
-            f"{len(summaries)} summaries"
-        )
+        logger.info(f"Retrieved {len(retrieved_chunks)} chunks")
         for i, chunk in enumerate(retrieved_chunks):
             dist = chunk.get("distance", "?")
             preview = chunk.get("text", "")[:80].replace("\n", " ")
             logger.info(f"  Chunk {i}: [{dist:.4f}] {preview}...")
+
+    # 3b. Check for document ingestion
+    ingest_result = None
+    ingest_url = _detect_ingest(request.message)
+    if ingest_url:
+        ingest_result = _ingest_url(ingest_url)
+        logger.info(f"Document ingestion: {ingest_url}")
 
     # 4. Server-side tool execution (no tools passed to model)
     global _pending_search_topic
@@ -398,22 +560,17 @@ async def handle_chat(request: ChatRequest):
 
     if should_search:
         if search_type == "confirm" and _pending_search_topic:
-            # User confirmed a pending search — use the stored topic
             search_results = _run_server_side_search(_pending_search_topic)
             _pending_search_topic = None
         elif search_type == "search":
-            query = _extract_search_query(request.message)
-            if query:
-                # Store as pending topic in case the entity asks first
-                # and also search immediately since the signal was explicit
-                _pending_search_topic = query
-                search_results = _run_server_side_search(query)
-    else:
-        # No search signal — extract topic from message in case the
-        # entity offers to search and the user confirms next turn
-        query = _extract_search_query(request.message)
-        if query and len(query) > 3:
-            _pending_search_topic = query
+            # Skip web search if memory already has strong results
+            if _memory_has_answer(retrieved_chunks):
+                logger.info("Search SKIPPED — memory has confident results")
+            else:
+                query = _extract_search_query(request.message)
+                if query and len(query) > 3:
+                    search_results = _run_server_side_search(query)
+                    _pending_search_topic = None
 
     # 5. Skill descriptions always included (so entity knows what it can do)
     skill_desc = skills.get_skill_descriptions()
@@ -421,9 +578,9 @@ async def handle_chat(request: ChatRequest):
     # 6. Assemble system prompt
     system_prompt = chat.build_system_prompt(
         retrieved_chunks=retrieved_chunks,
-        summaries=summaries,
         skill_descriptions=skill_desc,
         search_results=search_results,
+        ingest_result=ingest_result,
     )
 
     # 7. Trim conversation for context
@@ -443,10 +600,6 @@ async def handle_chat(request: ChatRequest):
         "chunks_count": len(retrieved_chunks),
         "chunks_tokens": debug.estimate_tokens(
             "\n".join(c.get("text", "") for c in retrieved_chunks)
-        ),
-        "summaries_count": len(summaries),
-        "summaries_tokens": debug.estimate_tokens(
-            "\n".join(s.get("content", "") for s in summaries)
         ),
         "skills_tokens": debug.estimate_tokens(skill_desc),
         "search_fired": search_results is not None,
@@ -506,9 +659,6 @@ async def handle_chat(request: ChatRequest):
             "soul": debug.estimate_tokens(chat.load_soul()),
             "chunks": debug.estimate_tokens(
                 "\n".join(c.get("text", "") for c in retrieved_chunks)
-            ),
-            "summaries": debug.estimate_tokens(
-                "\n".join(s.get("content", "") for s in summaries)
             ),
             "skills": debug.estimate_tokens(skill_desc),
             "search": debug.estimate_tokens(search_results) if search_results else 0,

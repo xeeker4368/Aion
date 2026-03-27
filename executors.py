@@ -212,19 +212,35 @@ def _store_document(doc_type: str, title: str, content: str) -> str:
         title: A short title for the document
         content: The document content
     """
-    # Import here to avoid circular imports
     import db
     import memory
 
-    # Store as a conversation-like document with a single message
+    # Map doc_type to source trust level
+    trust_map = {
+        "journal": "firsthand",
+        "creative": "firsthand",
+        "diagnostic": "firsthand",
+        "observation": "secondhand",
+        "research": "secondhand",
+        "moltbook": "thirdhand",
+        "article": "thirdhand",
+    }
+    source_trust = trust_map.get(doc_type, "secondhand")
+
+    # Store in DB1+DB2 as ground truth
     doc_id = db.start_conversation()
     db.save_message(doc_id, "system", f"[{doc_type}] {title}\n\n{content}")
     db.end_conversation(doc_id)
 
-    # Chunk and embed
+    # Chunk and embed with source metadata
     messages = db.get_conversation_messages(doc_id)
-    memory.create_final_chunks(doc_id, messages)
-    db.mark_conversation_chunked(doc_id)
+    memory.create_live_chunk(
+        conversation_id=doc_id,
+        messages=messages,
+        chunk_index=0,
+        source_type=doc_type,
+        source_trust=source_trust,
+    )
 
     return f"Document stored: {title} (type: {doc_type})"
 
