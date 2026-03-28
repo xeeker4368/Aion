@@ -167,15 +167,13 @@ def get_skill_descriptions() -> str:
     if not ready:
         return ""
 
-    lines = ["## Available Skills", ""]
-    lines.append("You have the following skills available. "
-                 "Use them when the situation calls for it.")
-    lines.append("")
+    skill_parts = [s["name"] + " — " + s["description"].rstrip(".") for s in ready]
+    skills_text = ". ".join(skill_parts) + "."
 
-    for skill in ready:
-        lines.append(f"- **{skill['name']}**: {skill['description']}")
-
-    return "\n".join(lines)
+    return (
+        f"You have the following skills available to you: {skills_text} "
+        f"Use them when the situation calls for it."
+    )
 
 
 def get_skill_instructions(name: str) -> str | None:

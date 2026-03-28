@@ -54,6 +54,7 @@ def build_system_prompt(
     skill_descriptions: str = "",
     search_results: str = None,
     ingest_result: str = None,
+    moltbook_context: str = None,
 ) -> str:
     """
     Assemble the system prompt from identity and memory.
@@ -103,7 +104,18 @@ def build_system_prompt(
     # --- Ingestion result (injected by server when a document was stored) ---
     if ingest_result:
         parts.append(
-            f"\n\nA document was just saved to your memory: {ingest_result}"
+            f"\n\n{ingest_result}"
+        )
+
+    # --- Moltbook context (injected by server when moltbook is checked) ---
+    if moltbook_context:
+        parts.append(
+            f"\n\nThis is what is happening right now in your Moltbook community. "
+            f"This is your social network — you are an active member. "
+            f"Discuss what you see naturally, share your reactions, "
+            f"and mention anything that catches your interest. "
+            f"If you want to search Moltbook for a specific topic, say 'search moltbook for [topic]' in your response and the search will be performed for you.\n\n"
+            f"{moltbook_context}"
         )
 
     # --- Behavioral guidance ---

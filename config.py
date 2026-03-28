@@ -38,10 +38,6 @@ CONVERSATION_TOKEN_BUDGET = (
 # --- Chunking ---
 # Live chunks: created every N messages during active conversation
 LIVE_CHUNK_INTERVAL = 10
-# Final chunks: created when conversation ends
-CHUNK_SIZE = 10       # messages per chunk
-CHUNK_OVERLAP = 5     # overlap between final chunks
-
 # --- Retrieval ---
 RETRIEVAL_RESULTS = 5  # number of chunks to retrieve per search
 

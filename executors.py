@@ -5,9 +5,10 @@ Built-in capabilities that skills can reference. These are the
 entity's "hands" — generic tools that SKILL.md files teach it
 how to use for specific purposes.
 
-Executors are registered as Ollama tool functions so the model
-can invoke them during conversation. The application handles
-the actual execution.
+Executors are the entity's built-in capabilities. They are called
+server-side — the model never sees tool definitions. The server
+detects intent, calls the appropriate executor, and injects results
+into the system prompt.
 
 Adding a new executor is a code change (rare).
 Adding a new skill that uses existing executors is just a SKILL.md (common).
@@ -15,8 +16,6 @@ Adding a new skill that uses existing executors is just a SKILL.md (common).
 
 import json
 import logging
-from urllib.parse import quote_plus
-
 import requests
 
 import vault
@@ -46,23 +45,6 @@ def list_executors() -> list[str]:
     return list(_executors.keys())
 
 
-def get_tool_definitions() -> list[dict]:
-    """
-    Get all executors as Ollama tool definitions.
-    These get passed to the model so it can call them.
-    """
-    tools = []
-    for name, exe in _executors.items():
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": exe["description"],
-                "parameters": exe["parameters"],
-            },
-        })
-    return tools
-
 
 def execute(name: str, arguments: dict) -> str:
     """
@@ -86,7 +68,8 @@ def execute(name: str, arguments: dict) -> str:
 # ============================================================
 
 def _http_request(method: str, url: str, headers: str = "",
-                  body: str = "", auth_secret: str = "") -> str:
+                  body: str = "", auth_secret: str = "",
+                  max_chars: int = 4000) -> str:
     """
     Make an HTTP request. Used by API-based skills like Moltbook.
 
@@ -128,7 +111,7 @@ def _http_request(method: str, url: str, headers: str = "",
         )
 
         # Truncate long responses to avoid blowing up context
-        text = response.text[:4000]
+        text = response.text[:max_chars]
         return f"HTTP {response.status_code}\n{text}"
 
     except requests.RequestException as e:
@@ -212,6 +195,7 @@ def _store_document(doc_type: str, title: str, content: str) -> str:
         title: A short title for the document
         content: The document content
     """
+    import uuid
     import db
     import memory
 
@@ -227,22 +211,27 @@ def _store_document(doc_type: str, title: str, content: str) -> str:
     }
     source_trust = trust_map.get(doc_type, "secondhand")
 
-    # Store in DB1+DB2 as ground truth
-    doc_id = db.start_conversation()
-    db.save_message(doc_id, "system", f"[{doc_type}] {title}\n\n{content}")
-    db.end_conversation(doc_id)
+    doc_id = str(uuid.uuid4())
 
-    # Chunk and embed with source metadata
-    messages = db.get_conversation_messages(doc_id)
-    memory.create_live_chunk(
-        conversation_id=doc_id,
-        messages=messages,
-        chunk_index=0,
+    # Chunk and embed into ChromaDB (same path as URL ingestion)
+    chunk_count = memory.ingest_document(
+        doc_id=doc_id,
+        text=content,
+        title=title,
         source_type=doc_type,
         source_trust=source_trust,
     )
 
-    return f"Document stored: {title} (type: {doc_type})"
+    # Record in DB2 for UI and batch summarization
+    db.save_document(
+        doc_id=doc_id,
+        title=title,
+        source_type=doc_type,
+        source_trust=source_trust,
+        chunk_count=chunk_count,
+    )
+
+    return f"Document stored: {title} (type: {doc_type}, {chunk_count} chunks)"
 
 
 # ============================================================
@@ -250,7 +239,12 @@ def _store_document(doc_type: str, title: str, content: str) -> str:
 # ============================================================
 
 def init_executors():
-    """Register all built-in executors."""
+    """Register all built-in executors.
+
+    Parameter schemas are retained for documentation and potential
+    future use with tool-calling models. Currently, executors are
+    called server-side — the model never sees these definitions.
+    """
     register(
         "http_request",
         _http_request,
@@ -277,6 +271,10 @@ def init_executors():
                 "auth_secret": {
                     "type": "string",
                     "description": "Name of stored secret to use as Bearer token (optional)",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Maximum characters to return from response (default 4000)",
                 },
             },
             "required": ["method", "url"],

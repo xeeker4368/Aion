@@ -11,7 +11,6 @@ No fact extraction. No ChromaDB writes. Summaries go to DB2 only.
 Uses qwen3:14b. Runs as a batch process — not real-time.
 """
 
-import json
 import logging
 
 import ollama
@@ -24,20 +23,7 @@ logger = logging.getLogger("aion.consolidation")
 # Explicit context window for the consolidation model.
 CONSOLIDATION_CTX = 16384
 
-CONSOLIDATION_PROMPT = """Read this conversation carefully. Write a brief summary of what happened.
-
-The summary should be 2-4 sentences. Capture:
-- The important topics discussed
-- Any decisions made
-- Emotional tone if relevant
-- Anything that changed or was corrected
-
-Write it like you're telling someone what was discussed. Use actual names when they appear in the transcript.
-
-Respond with valid JSON in exactly this format:
-{
-  "summary": "Your summary here."
-}
+CONSOLIDATION_PROMPT = """Read this conversation carefully. Write a brief summary of what happened — 2 to 4 sentences. Capture the important topics discussed, any decisions made, emotional tone if relevant, and anything that changed or was corrected. Write it like you're telling someone what was discussed. Use actual names when they appear in the transcript. Just write the summary, nothing else.
 
 Here is the conversation transcript:
 
@@ -81,27 +67,16 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
         response = client.chat(
             model=CONSOLIDATION_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            format="json",
             options={"num_ctx": CONSOLIDATION_CTX},
         )
-        response_text = response["message"]["content"]
+        summary = response["message"]["content"].strip()
     except Exception as e:
         logger.error(f"Ollama call failed: {e}")
         return None
 
-    # Parse the response
-    try:
-        result = json.loads(response_text)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse consolidation response: {e}")
-        logger.error(f"Raw response: {response_text[:500]}")
+    if not summary:
+        logger.error("Consolidation returned empty summary")
         return None
-
-    if "summary" not in result:
-        logger.error("Consolidation response missing summary field")
-        return None
-
-    summary = result["summary"]
 
     # Summary → DB2 (for UI only, never goes to entity)
     db.save_consolidation(conversation_id, summary)
@@ -110,7 +85,7 @@ def consolidate_conversation(conversation_id: str) -> dict | None:
         f"Consolidation complete: summary ({len(summary)} chars) → DB2"
     )
 
-    return result
+    return {"summary": summary}
 
 
 def summarize_documents():

@@ -22,6 +22,7 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -137,25 +138,39 @@ def save_message(conversation_id: str, role: str, content: str) -> dict:
     message_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    # Archive — append only, forever
-    with _connect(ARCHIVE_DB) as conn:
-        conn.execute(
+    # Write to both databases. If either fails, neither commits.
+    archive_conn = _connect(ARCHIVE_DB)
+    working_conn = _connect(WORKING_DB)
+
+    try:
+        archive_conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, timestamp) "
             "VALUES (?, ?, ?, ?, ?)",
             (message_id, conversation_id, role, content, now),
         )
 
-    # Working store — same data, plus update conversation metadata
-    with _connect(WORKING_DB) as conn:
-        conn.execute(
+        working_conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, timestamp) "
             "VALUES (?, ?, ?, ?, ?)",
             (message_id, conversation_id, role, content, now),
         )
-        conn.execute(
+        working_conn.execute(
             "UPDATE conversations SET message_count = message_count + 1 WHERE id = ?",
             (conversation_id,),
         )
+
+        # Both succeeded — commit both
+        archive_conn.commit()
+        working_conn.commit()
+
+    except Exception:
+        archive_conn.rollback()
+        working_conn.rollback()
+        raise
+
+    finally:
+        archive_conn.close()
+        working_conn.close()
 
     return {
         "id": message_id,

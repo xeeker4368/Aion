@@ -127,24 +127,6 @@ def create_live_chunk(
     )
 
 
-def _remove_live_chunks(conversation_id: str):
-    """Remove all live chunks for a conversation."""
-    collection = _get_collection()
-
-    try:
-        results = collection.get(
-            where={
-                "$and": [
-                    {"conversation_id": {"$eq": conversation_id}},
-                    {"is_live": {"$eq": "true"}},
-                ]
-            }
-        )
-        if results["ids"]:
-            collection.delete(ids=results["ids"])
-    except Exception:
-        pass
-
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     """
@@ -243,7 +225,9 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
 
     try:
         results = collection.query(**query_params)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("aion.memory").error(f"ChromaDB search failed: {e}")
         return []
 
     memories = []
