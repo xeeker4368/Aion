@@ -90,6 +90,10 @@ def log_startup_banner():
     skill_list = skills.list_skills()
     skill_names = ", ".join(s["name"] for s in skill_list) if skill_list else "none"
 
+    # Tool definitions
+    tool_defs = skills.get_tool_definitions()
+    tool_names = ", ".join(d["function"]["name"] for d in tool_defs) if tool_defs else "none"
+
     # Vault
     vault_keys = vault.list_keys()
     vault_names = ", ".join(vault_keys) if vault_keys else "none"
@@ -124,6 +128,7 @@ Paths:
   SOUL.md:        {config.SOUL_PATH} ({_file_size_str(config.SOUL_PATH)})
 
 Skills loaded:    {len(skill_list)} — {skill_names}
+Tools available:  {len(tool_defs)} — {tool_names}
 Vault keys:       {len(vault_keys)} — {vault_names}
 ChromaDB docs:    {chroma_count} chunks indexed
 ============================================================"""
@@ -147,27 +152,20 @@ def log_request(request_data: dict):
     if len(d["user_message"]) > 80:
         user_preview += "..."
 
-    # Search line
-    if d["search_fired"]:
-        search_line = f'{d["search_type"]}: "{d["search_query"]}" ({d["search_results_tokens"]}t)'
-    else:
-        search_line = "none"
-
     # Trimmed warning
     trim_warning = ""
-    if d["messages_trimmed"] > 0:
+    if d.get("messages_trimmed", 0) > 0:
         trim_warning = f" ⚠ TRIMMED {d['messages_trimmed']}"
 
     # Budget warning
-    budget_warning = " ⚠ BUDGET EXCEEDED" if d["budget_exceeded"] else ""
+    budget_warning = " ⚠ BUDGET EXCEEDED" if d.get("budget_exceeded") else ""
 
     from datetime import datetime
     readable_time = datetime.fromisoformat(d["timestamp"]).strftime("%I:%M:%S %p")
     console_lines = [
         f'--- REQUEST #{d["message_number"]} | {readable_time} ---',
         f"User: {user_preview}",
-        f'Context: SOUL={d["soul_tokens"]} Chunks={d["chunks_count"]}({d["chunks_tokens"]}t) Skills={d["skills_tokens"]}t{" [RETRIEVAL SKIPPED]" if d.get("retrieval_skipped") else ""}',
-        f"Search: {search_line}",
+        f'Context: SOUL={d["soul_tokens"]} Chunks={d["chunks_count"]}({d["chunks_tokens"]}t) Skills={d["skills_tokens"]}t Tools={d.get("tools_count", 0)}{" [RETRIEVAL SKIPPED]" if d.get("retrieval_skipped") else ""}',
         f'History: {d["conversation_messages_sent"]}/{d["conversation_messages_total"]} messages ({d["conversation_history_tokens"]}t){trim_warning}',
         f'TOTAL: {d["total_tokens"]}/{d["context_window"]} tokens | Headroom: {d["headroom"]}t{budget_warning}',
     ]
@@ -191,7 +189,14 @@ def log_response(response_data: dict):
     d = response_data
     logger = _get_logger()
 
-    console_line = f'Response: {d["response_tokens"]}t | Round trip: {d["total_round_trip_tokens"]}/{d.get("context_window", "")}t'
+    # Tool calls summary
+    tool_calls = d.get("tool_calls", [])
+    tool_line = ""
+    if tool_calls:
+        tool_names = [tc["name"] for tc in tool_calls]
+        tool_line = f" | Tools: {', '.join(tool_names)}"
+
+    console_line = f'Response: {d["response_tokens"]}t | Round trip: {d["total_round_trip_tokens"]}/{d.get("context_window", "")}t{tool_line}'
 
     print(console_line)
     logger.debug(console_line)
@@ -202,3 +207,10 @@ def log_response(response_data: dict):
         for line in d["response_full"].split("\n"):
             logger.debug(line)
         logger.debug("--- FULL RESPONSE END ---")
+
+    # Log tool call details
+    if tool_calls:
+        logger.debug("--- TOOL CALLS ---")
+        for tc in tool_calls:
+            logger.debug(f"  {tc['name']}({tc.get('arguments', {})}) -> {tc.get('result', '(none)')}")
+        logger.debug("--- END TOOL CALLS ---")

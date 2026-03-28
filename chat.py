@@ -52,9 +52,7 @@ def load_soul() -> str:
 def build_system_prompt(
     retrieved_chunks: list[dict],
     skill_descriptions: str = "",
-    search_results: str = None,
     ingest_result: str = None,
-    moltbook_context: str = None,
 ) -> str:
     """
     Assemble the system prompt from identity and memory.
@@ -63,8 +61,7 @@ def build_system_prompt(
     1. Identity (soul.md)
     2. Remembered experiences (conversation chunks from ChromaDB)
     3. Available skills
-    4. Search results (if any)
-    5. Behavioral guidance
+    4. Behavioral guidance
     """
     soul = load_soul()
     parts = [soul]
@@ -93,39 +90,16 @@ def build_system_prompt(
     if skill_descriptions:
         parts.append(f"\n\n{skill_descriptions}")
 
-    # --- Search results (injected by server when relevant) ---
-    if search_results:
-        parts.append(
-            f"\n\nThe following are web search results for the current question. "
-            f"Use these to answer — summarize in your own words, do not dump raw results.\n\n"
-            f"{search_results}"
-        )
-
     # --- Ingestion result (injected by server when a document was stored) ---
     if ingest_result:
         parts.append(
             f"\n\n{ingest_result}"
         )
 
-    # --- Moltbook context (injected by server when moltbook is checked) ---
-    if moltbook_context:
-        parts.append(
-            f"\n\nThis is what is happening right now in your Moltbook community. "
-            f"This is your social network — you are an active member. "
-            f"Discuss what you see naturally, share your reactions, "
-            f"and mention anything that catches your interest. "
-            f"If you want to search Moltbook for a specific topic, say 'search moltbook for [topic]' in your response and the search will be performed for you.\n\n"
-            f"{moltbook_context}"
-        )
-
     # --- Behavioral guidance ---
     parts.append("""
 
 You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.
-
-When search results appear above, you already have the answer. Use them. Summarize in your own words. Do not offer to search when results are already provided.
-
-When you genuinely don't have information and no search results are provided, say so and offer to look it up.
 
 Never show raw data, timestamps, IDs, or technical artifacts from your memory system in conversation. Speak naturally about what you remember, as a person would.""")
 
@@ -163,29 +137,87 @@ def trim_conversation_for_context(messages: list[dict]) -> list[dict]:
     return trimmed
 
 
-def send_message(system_prompt: str, conversation_messages: list[dict]) -> str:
+def send_message(
+    system_prompt: str,
+    conversation_messages: list[dict],
+    tool_definitions: list[dict] = None,
+    tool_executor=None,
+    max_tool_rounds: int = 3,
+) -> tuple[str, list[dict]]:
     """
     Send a message to Ollama and get the response.
 
-    No tools are passed to the model. The server handles tool execution
-    (search, API calls) before this function is called, and injects
-    results into the system prompt. The model just reads and responds.
+    If tool_definitions and tool_executor are provided, the model can call
+    tools. The tool call loop works like this:
+    1. Send messages + tools to Ollama
+    2. If the model returns tool calls, execute each via tool_executor
+    3. Append tool results to messages and call Ollama again
+    4. Repeat until the model responds with text or max rounds hit
 
     Args:
-        system_prompt: assembled from identity + memories + search results
+        system_prompt: assembled from identity + memories
         conversation_messages: the current conversation (already trimmed)
+        tool_definitions: Ollama-format tool definitions from skills.py
+        tool_executor: function(tool_name, arguments) -> str
+        max_tool_rounds: safety limit on tool call loops
 
     Returns:
-        The model's response text.
+        Tuple of (response_text, tool_calls_made) where tool_calls_made
+        is a list of {"name": str, "arguments": dict, "result": str} dicts.
     """
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(conversation_messages)
 
     client = _get_client()
+    tool_calls_made = []
 
-    response = client.chat(
-        model=CHAT_MODEL,
-        messages=messages,
-    )
+    for round_num in range(max_tool_rounds + 1):
+        # Build the chat kwargs
+        chat_kwargs = {
+            "model": CHAT_MODEL,
+            "messages": messages,
+        }
+        if tool_definitions and round_num < max_tool_rounds:
+            chat_kwargs["tools"] = tool_definitions
 
-    return response["message"].get("content", "")
+        response = client.chat(**chat_kwargs)
+        msg = response["message"]
+
+        # If no tool calls, we're done — return the text response
+        if not msg.get("tool_calls"):
+            return msg.get("content", ""), tool_calls_made
+
+        # Model wants to call tools
+        if not tool_executor:
+            # No executor provided, return whatever text the model gave
+            return msg.get("content", ""), tool_calls_made
+
+        # Append the assistant's tool call message to the conversation
+        messages.append(msg)
+
+        # Execute each tool call
+        for tool_call in msg["tool_calls"]:
+            func = tool_call.function
+            tool_name = func.name
+            tool_args = func.arguments
+
+            logger.info(f"Tool call: {tool_name}({tool_args})")
+
+            # Execute via the server's executor
+            result = tool_executor(tool_name, tool_args)
+
+            tool_calls_made.append({
+                "name": tool_name,
+                "arguments": tool_args,
+                "result": result[:200] if result else "(empty)",
+            })
+
+            # Append the tool result for the model to read
+            messages.append({
+                "role": "tool",
+                "content": result,
+            })
+
+    # If we exhausted max rounds, return whatever we have
+    logger.warning(f"Tool call loop hit max rounds ({max_tool_rounds})")
+    return msg.get("content", ""), tool_calls_made
