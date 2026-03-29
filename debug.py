@@ -91,7 +91,8 @@ def log_startup_banner():
     skill_names = ", ".join(s["name"] for s in skill_list) if skill_list else "none"
 
     # Tool definitions
-    tool_defs = skills.get_tool_definitions()
+    import executors as _executors_mod
+    tool_defs = _executors_mod.get_tool_definitions()
     tool_names = ", ".join(d["function"]["name"] for d in tool_defs) if tool_defs else "none"
 
     # Vault

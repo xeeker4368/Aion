@@ -173,10 +173,14 @@ def ingest_document(doc_id: str, text: str, title: str,
     """
     Chunk and embed a document into ChromaDB.
 
+    Documents are stored as clean text — no message wrapping,
+    no fake timestamps, no role prefixes. They are not conversations.
+
     Returns the number of chunks created.
     """
     from config import INGEST_CHUNK_SIZE, INGEST_CHUNK_OVERLAP
 
+    collection = _get_collection()
     chunks = chunk_text(text, INGEST_CHUNK_SIZE, INGEST_CHUNK_OVERLAP)
 
     for i, chunk_text_piece in enumerate(chunks):
@@ -185,12 +189,19 @@ def ingest_document(doc_id: str, text: str, title: str,
         if i == 0:
             text_to_store = f"{title}\n\n{chunk_text_piece}"
 
-        create_live_chunk(
-            conversation_id=doc_id,
-            messages=[{"role": "system", "content": text_to_store, "timestamp": ""}],
-            chunk_index=i,
-            source_type=source_type,
-            source_trust=source_trust,
+        chunk_id = f"{doc_id}_chunk_{i}"
+
+        collection.upsert(
+            ids=[chunk_id],
+            documents=[text_to_store],
+            metadatas=[{
+                "conversation_id": doc_id,
+                "chunk_index": i,
+                "message_count": 0,
+                "source_type": source_type,
+                "source_trust": source_trust,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }],
         )
 
     return len(chunks)
@@ -201,10 +212,15 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
     """
     Search memory for relevant chunks.
 
+    Results are weighted by source trust (firsthand experience ranks
+    higher than thirdhand articles) and deduplicated so no single
+    conversation dominates the results.
+
     Returns a list of results, each with:
     - text: the chunk content
     - conversation_id: which conversation it came from
     - distance: how close the match is (lower = better)
+    - weighted_distance: distance after trust weighting
     - source_type: what kind of experience
     - source_trust: how trustworthy
     """
@@ -213,9 +229,12 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
     if collection.count() == 0:
         return []
 
+    # Request more results than needed so we have room after deduplication
+    fetch_count = min(n_results * 3, collection.count())
+
     query_params = {
         "query_texts": [query],
-        "n_results": min(n_results, collection.count()),
+        "n_results": fetch_count,
     }
 
     if exclude_conversation_id:
@@ -230,16 +249,46 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
         logging.getLogger("aion.memory").error(f"ChromaDB search failed: {e}")
         return []
 
-    memories = []
-    if results and results["documents"] and results["documents"][0]:
-        for i, doc in enumerate(results["documents"][0]):
-            meta = results["metadatas"][0][i] if results["metadatas"] else {}
-            memories.append({
-                "text": doc,
-                "conversation_id": meta.get("conversation_id", ""),
-                "distance": results["distances"][0][i] if results["distances"] else None,
-                "source_type": meta.get("source_type", "conversation"),
-                "source_trust": meta.get("source_trust", "firsthand"),
-            })
+    if not results or not results["documents"] or not results["documents"][0]:
+        return []
 
-    return memories
+    # Trust weighting — firsthand experience ranks higher
+    trust_weights = {
+        "firsthand": 0.9,    # boost — conversations with Lyle
+        "secondhand": 1.0,   # neutral — research, observations
+        "thirdhand": 1.1,    # penalty — articles, other AIs
+    }
+
+    memories = []
+    for i, doc in enumerate(results["documents"][0]):
+        meta = results["metadatas"][0][i] if results["metadatas"] else {}
+        raw_distance = results["distances"][0][i] if results["distances"] else None
+
+        trust = meta.get("source_trust", "firsthand")
+        weight = trust_weights.get(trust, 1.0)
+        weighted_distance = raw_distance * weight if raw_distance is not None else None
+
+        memories.append({
+            "text": doc,
+            "conversation_id": meta.get("conversation_id", ""),
+            "distance": raw_distance,
+            "weighted_distance": weighted_distance,
+            "source_type": meta.get("source_type", "conversation"),
+            "source_trust": meta.get("source_trust", "firsthand"),
+        })
+
+    # Sort by weighted distance (lower = better)
+    memories.sort(key=lambda m: m["weighted_distance"] if m["weighted_distance"] is not None else float("inf"))
+
+    # Deduplicate — max one chunk per conversation
+    seen_conversations = set()
+    deduplicated = []
+    for mem in memories:
+        conv_id = mem["conversation_id"]
+        if conv_id not in seen_conversations:
+            seen_conversations.add(conv_id)
+            deduplicated.append(mem)
+        if len(deduplicated) >= n_results:
+            break
+
+    return deduplicated

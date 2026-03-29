@@ -63,6 +63,25 @@ def execute(name: str, arguments: dict) -> str:
         return f"Error executing {name}: {str(e)}"
 
 
+def get_tool_definitions() -> list[dict]:
+    """
+    Generate Ollama-compatible tool definitions from registered executors.
+    These are the generic tools the entity can use — it reads SKILL.md
+    documentation to know when and how to use them.
+    """
+    definitions = []
+    for name, exe in _executors.items():
+        definitions.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": exe["description"],
+                "parameters": exe["parameters"],
+            },
+        })
+    return definitions
+
+
 # ============================================================
 # Built-in executors
 # ============================================================

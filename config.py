@@ -17,8 +17,7 @@ SOUL_PATH = BASE_DIR / "soul.md"
 
 # --- Ollama ---
 OLLAMA_HOST = "http://localhost:11434"
-#CHAT_MODEL = "hermes3:latest"
-CHAT_MODEL = "hermes3:8b-aion"
+CHAT_MODEL = "llama3.1:8b-aion"
 CONSOLIDATION_MODEL = "qwen3:14b"
 EMBED_MODEL = "nomic-embed-text"
 

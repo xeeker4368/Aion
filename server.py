@@ -216,6 +216,9 @@ def _is_trivial_message(message: str) -> bool:
         # Greetings
         "hi", "hey", "hello", "howdy", "yo", "sup",
         "hi there", "hey there", "hello there",
+        "hi again", "hey again", "hello again",
+        "hi there again", "hey there again",
+        "im back", "i'm back",
         "good morning", "good afternoon", "good evening",
         "good night", "morning", "evening",
         "whats up", "what's up", "wassup",
@@ -238,6 +241,29 @@ def _is_trivial_message(message: str) -> bool:
     ]
 
     return msg in trivial_patterns
+
+
+def _targets_realtime_skill(message: str) -> bool:
+    """
+    Detect if a message is asking about a realtime skill's domain.
+
+    Realtime data should come from live tool calls, not from memory.
+    When someone asks "what's on moltbook?" they want current data,
+    not memories of what was there last week.
+
+    Returns True if retrieval should be skipped in favor of tool calls.
+    """
+    msg = message.lower().strip()
+
+    # Get realtime skill names
+    realtime_skills = [s for s in skills.get_ready_skills() if s.get("realtime")]
+
+    for skill in realtime_skills:
+        skill_name = skill["name"].lower()
+        if skill_name in msg:
+            return True
+
+    return False
 
 
 def _detect_ingest(message: str) -> str | None:
@@ -322,36 +348,11 @@ def _ingest_url(url: str) -> str:
 def _execute_tool_call(tool_name: str, arguments: dict) -> str:
     """
     Execute a tool call from the model.
-    Looks up the tool in the skill map, merges fixed args with
-    model-provided args, and calls the appropriate executor.
+    The model calls generic executors directly (http_request, web_search, etc.)
+    with all arguments constructed from SKILL.md documentation.
     """
-    tool_map = skills.get_tool_map()
-    tool_info = tool_map.get(tool_name)
-
-    if not tool_info:
-        logger.warning(f"Unknown tool: {tool_name}")
-        return f"Error: unknown tool '{tool_name}'"
-
-    executor_name = tool_info["executor"]
-    executor_args = dict(tool_info.get("executor_args", {}))
-    url_template = tool_info.get("url_template")
-
-    # Handle URL templates (e.g., moltbook search)
-    if url_template and "query" in arguments:
-        import urllib.parse
-        encoded_query = urllib.parse.quote(arguments["query"])
-        executor_args["url"] = url_template.replace("{query}", encoded_query)
-    elif "url" in executor_args:
-        # Fixed URL (e.g., moltbook dashboard) — already in executor_args
-        pass
-
-    # Merge model-provided arguments (model args override executor_args for shared keys)
-    for key, value in arguments.items():
-        if key not in executor_args:
-            executor_args[key] = value
-
-    logger.info(f"Executing tool: {tool_name} via {executor_name} with {list(executor_args.keys())}")
-    result = executors.execute(executor_name, executor_args)
+    logger.info(f"Executing tool: {tool_name} with {list(arguments.keys())}")
+    result = executors.execute(tool_name, arguments)
     return result
 
 
@@ -378,10 +379,13 @@ async def handle_chat(request: ChatRequest):
     # 2. Live chunk check
     _maybe_create_live_chunk(conversation_id, msg_count)
 
-    # 3. Retrieve memories (skip for greetings and trivial messages)
+    # 3. Retrieve memories (skip for greetings and realtime skill queries)
     if _is_trivial_message(request.message):
         retrieved_chunks = []
         logger.info("Retrieval: SKIPPED (trivial message)")
+    elif _targets_realtime_skill(request.message):
+        retrieved_chunks = []
+        logger.info("Retrieval: SKIPPED (realtime skill — use live data)")
     else:
         retrieved_chunks = memory.search(
             query=request.message,
@@ -403,8 +407,11 @@ async def handle_chat(request: ChatRequest):
     # 5. Skill descriptions for system prompt
     skill_desc = skills.get_skill_descriptions()
 
-    # 6. Tool definitions for the model
-    tool_definitions = skills.get_tool_definitions()
+    # 6. Tool definitions for the model (skip on trivial messages — just talk)
+    if _is_trivial_message(request.message):
+        tool_definitions = []
+    else:
+        tool_definitions = executors.get_tool_definitions()
 
     # 7. Assemble system prompt
     system_prompt = chat.build_system_prompt(

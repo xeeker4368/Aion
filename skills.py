@@ -66,7 +66,7 @@ def _load_skill(path: Path):
             "version": frontmatter.get("version", "1.0.0"),
             "requires": frontmatter.get("requires", {}),
             "realtime": frontmatter.get("realtime", False),
-            "tools": frontmatter.get("tools", []),
+            "tools": [],  # Tools now come from executors, not skills
             "instructions": body,
             "path": str(path),
             "status": _check_requirements(frontmatter.get("requires", {})),
@@ -163,117 +163,22 @@ def get_ready_skills() -> list[dict]:
 
 def get_skill_descriptions() -> str:
     """
-    Get a compact summary of all ready skills for the system prompt.
-    This is the progressive disclosure — just names and descriptions,
-    not full instructions.
+    Get skill descriptions and instructions for the system prompt.
+    The entity reads these as documentation to know how to use
+    its generic tools (http_request, web_search, etc.) for specific purposes.
     """
     ready = get_ready_skills()
     if not ready:
         return ""
 
-    skill_parts = []
+    parts = []
     for s in ready:
-        desc = s["description"].rstrip(".")
-        skill_parts.append(f"{s['name']} — {desc}")
+        # Include body instructions — this is the documentation the entity reads
+        instructions = s.get("instructions", "").strip()
+        if instructions:
+            parts.append(instructions)
 
-        # Include tool names so the entity knows what it can call
-        tools = s.get("tools", [])
-        if tools:
-            tool_names = [t["name"] for t in tools]
-            skill_parts[-1] += f" (tools: {', '.join(tool_names)})"
-
-    skills_text = ". ".join(skill_parts) + "."
-
-    return (
-        f"You have the following skills available to you: {skills_text}"
-    )
-
-
-def get_tool_definitions() -> list[dict]:
-    """
-    Generate Ollama-compatible tool definitions from all ready skills.
-    These get passed to client.chat(tools=...) so the model can call them.
-
-    Returns a list of tool dicts in the Ollama format:
-    [{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}]
-    """
-    ready = get_ready_skills()
-    definitions = []
-
-    for skill in ready:
-        for tool in skill.get("tools", []):
-            # Build the parameters schema
-            properties = {}
-            required = []
-
-            for param_name, param_info in tool.get("parameters", {}).items():
-                properties[param_name] = {
-                    "type": param_info.get("type", "string"),
-                    "description": param_info.get("description", ""),
-                }
-                if param_info.get("required", False):
-                    required.append(param_name)
-
-            # Build the tool description
-            tool_description = tool["description"]
-
-            # If the skill is realtime, tell the model this is live data
-            if skill.get("realtime", False):
-                tool_description += (
-                    " This returns live data that changes frequently."
-                    " Always use this tool to check current information"
-                    " rather than relying on what you remember from previous checks."
-                )
-
-            definition = {
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool_description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": required,
-                    },
-                },
-            }
-
-            definitions.append(definition)
-
-    return definitions
-
-
-def get_tool_map() -> dict:
-    """
-    Build a lookup from tool name to execution info.
-    Used by the server to execute tool calls from the model.
-
-    Returns: {tool_name: {"executor": str, "executor_args": dict, "url_template": str|None, "skill_name": str}}
-    """
-    ready = get_ready_skills()
-    tool_map = {}
-
-    for skill in ready:
-        for tool in skill.get("tools", []):
-            tool_map[tool["name"]] = {
-                "executor": tool.get("executor", ""),
-                "executor_args": tool.get("executor_args", {}),
-                "url_template": tool.get("url_template"),
-                "skill_name": skill["name"],
-            }
-
-    return tool_map
-
-
-def get_skill_instructions(name: str) -> str | None:
-    """
-    Get the full instructions for a skill.
-    Called when the entity decides to use a skill and needs the details.
-    """
-    skill = _skills.get(name)
-    if skill and skill["status"]["ready"]:
-        return skill["instructions"]
-    return None
+    return "\n\n".join(parts)
 
 
 def refresh_skill_status():

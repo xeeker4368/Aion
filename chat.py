@@ -58,13 +58,12 @@ def build_system_prompt(
     Assemble the system prompt from identity and memory.
 
     The model sees (in order):
-    1. Identity (soul.md)
-    2. Remembered experiences (conversation chunks from ChromaDB)
-    3. Available skills
-    4. Behavioral guidance
+    1. Remembered experiences (conversation chunks from ChromaDB)
+    2. Available skills
+    3. Behavioral guidance
+    4. Identity (soul.md) — LAST, closest to generation
     """
-    soul = load_soul()
-    parts = [soul]
+    parts = []
 
     tokens_remaining = RETRIEVAL_TOKEN_BUDGET
 
@@ -82,7 +81,7 @@ def build_system_prompt(
         if chunk_texts:
             chunks_block = "\n\n---\n\n".join(chunk_texts)
             parts.append(
-                f"\n\nThese are your own experiences and memories:\n\n"
+                f"These are your own experiences and memories:\n\n"
                 f"{chunks_block}"
             )
 
@@ -99,9 +98,11 @@ def build_system_prompt(
     # --- Behavioral guidance ---
     parts.append("""
 
-You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.
+You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.""")
 
-Never show raw data, timestamps, IDs, or technical artifacts from your memory system in conversation. Speak naturally about what you remember, as a person would.""")
+    # --- Identity (soul.md) — last, closest to generation ---
+    soul = load_soul()
+    parts.append(f"\n\n{soul}")
 
     return "\n".join(parts)
 
