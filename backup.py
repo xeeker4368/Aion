@@ -20,6 +20,22 @@ from config import ARCHIVE_DB, WORKING_DB, CHROMA_DIR, DATA_DIR
 DEFAULT_BACKUP_DIR = DATA_DIR / "backups"
 
 
+def _backup_sqlite(source: Path, dest: Path):
+    """
+    Safe SQLite backup using the backup API.
+    Handles WAL mode and concurrent writes correctly.
+    """
+    import sqlite3
+
+    source_conn = sqlite3.connect(str(source))
+    dest_conn = sqlite3.connect(str(dest))
+    try:
+        source_conn.backup(dest_conn)
+    finally:
+        dest_conn.close()
+        source_conn.close()
+
+
 def run_backup(backup_root: Path = None):
     if backup_root is None:
         backup_root = DEFAULT_BACKUP_DIR
@@ -30,16 +46,16 @@ def run_backup(backup_root: Path = None):
 
     print(f"Backing up to {backup_dir}...")
 
-    # Archive DB
+    # Archive DB — use SQLite backup API for safe copy
     if ARCHIVE_DB.exists():
-        shutil.copy2(str(ARCHIVE_DB), str(backup_dir / "archive.db"))
-        size = ARCHIVE_DB.stat().st_size / 1024
+        _backup_sqlite(ARCHIVE_DB, backup_dir / "archive.db")
+        size = (backup_dir / "archive.db").stat().st_size / 1024
         print(f"  archive.db: {size:.1f} KB")
 
-    # Working DB
+    # Working DB — use SQLite backup API for safe copy
     if WORKING_DB.exists():
-        shutil.copy2(str(WORKING_DB), str(backup_dir / "working.db"))
-        size = WORKING_DB.stat().st_size / 1024
+        _backup_sqlite(WORKING_DB, backup_dir / "working.db")
+        size = (backup_dir / "working.db").stat().st_size / 1024
         print(f"  working.db: {size:.1f} KB")
 
     # ChromaDB directory

@@ -23,6 +23,7 @@ from config import (
     LIVE_CHUNK_INTERVAL,
     RETRIEVAL_RESULTS,
 )
+from utils import format_timestamp
 
 # Module-level state
 _client = None
@@ -65,25 +66,37 @@ def _messages_to_text(messages: list[dict]) -> str:
         role = msg.get("role", "unknown")
         content = msg.get("content", "")
 
-        readable_time = _format_timestamp(timestamp)
+        readable_time = format_timestamp(timestamp)
         lines.append(f"[{readable_time}] {role}: {content}")
     return "\n".join(lines)
-
-
-def _format_timestamp(iso_timestamp: str) -> str:
-    """Convert ISO timestamp to human-readable format."""
-    if not iso_timestamp:
-        return "unknown time"
-    try:
-        dt = datetime.fromisoformat(iso_timestamp)
-        return dt.strftime("%B %d, %Y at %I:%M %p")
-    except (ValueError, TypeError):
-        return iso_timestamp
 
 
 def should_create_live_chunk(message_count: int) -> bool:
     """Check if it's time to create a live chunk based on message count."""
     return message_count > 0 and message_count % LIVE_CHUNK_INTERVAL == 0
+
+
+def live_chunk_index(message_count: int) -> int:
+    """
+    Calculate the chunk index for a live chunk at an interval boundary.
+
+    Chunk numbering is sequential starting from 0:
+    - At message 10 (interval=10): index 0 (messages 1-10)
+    - At message 20: index 1 (messages 11-20)
+    - At message 30: index 2 (messages 21-30)
+    """
+    return (message_count // LIVE_CHUNK_INTERVAL) - 1
+
+
+def remainder_chunk_index(message_count: int) -> int:
+    """
+    Calculate the chunk index for remainder messages at conversation end.
+
+    The remainder chunk gets the next index after the last live chunk:
+    - 15 messages (last live chunk at 10 was index 0): remainder is index 1
+    - 25 messages (last live chunk at 20 was index 1): remainder is index 2
+    """
+    return message_count // LIVE_CHUNK_INTERVAL
 
 
 def create_live_chunk(

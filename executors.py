@@ -5,10 +5,11 @@ Built-in capabilities that skills can reference. These are the
 entity's "hands" — generic tools that SKILL.md files teach it
 how to use for specific purposes.
 
-Executors are the entity's built-in capabilities. They are called
-server-side — the model never sees tool definitions. The server
-detects intent, calls the appropriate executor, and injects results
-into the system prompt.
+Two-pass tool calling: the entity first responds without tool
+definitions. If its response expresses tool intent, the server
+re-calls with tool definitions enabled and the entity can make
+structured tool calls. This prevents reflexive tool use on
+conversational messages.
 
 Adding a new executor is a code change (rare).
 Adding a new skill that uses existing executors is just a SKILL.md (common).
@@ -17,6 +18,7 @@ Adding a new skill that uses existing executors is just a SKILL.md (common).
 import json
 import logging
 import requests
+import search_limiter
 
 import vault
 
@@ -33,11 +35,6 @@ def register(name: str, func, description: str, parameters: dict):
         "description": description,
         "parameters": parameters,
     }
-
-
-def get_executor(name: str):
-    """Get an executor by name."""
-    return _executors.get(name)
 
 
 def list_executors() -> list[str]:
@@ -182,10 +179,14 @@ def _web_search(query: str, max_results: int = 5) -> str:
     if not api_key:
         return "Error: TAVILY_API_KEY not found. Add it in Settings (/settings)."
 
+    if not search_limiter.can_search():
+        return 'Search limit reached for this month. Try again next month or use web_fetch if you have a specific URL.'
+
     try:
         from tavily import TavilyClient
         client = TavilyClient(api_key=api_key)
         response = client.search(query, max_results=max_results)
+        search_limiter.record_search()
 
         results = response.get("results", [])
         if not results:

@@ -18,8 +18,6 @@ import json
 import os
 import logging
 from pathlib import Path
-from base64 import urlsafe_b64encode
-
 from cryptography.fernet import Fernet
 
 from config import DATA_DIR
@@ -32,6 +30,7 @@ MASTER_KEY_FILE = DATA_DIR / ".master_key"
 # In-memory decrypted secrets
 _secrets: dict[str, str] = {}
 _fernet: Fernet | None = None
+_initialized: bool = False
 
 
 def _get_master_key() -> bytes:
@@ -63,8 +62,9 @@ def _get_master_key() -> bytes:
 
 def init_secrets():
     """Initialize the secrets manager. Load and decrypt existing secrets."""
-    global _fernet, _secrets
+    global _fernet, _secrets, _initialized
 
+    _initialized = True
     _fernet = Fernet(_get_master_key())
 
     if SECRETS_FILE.exists():
@@ -95,7 +95,7 @@ def _save():
 
 def get(key: str) -> str | None:
     """Get a secret by key name. Returns None if not found."""
-    if not _secrets and SECRETS_FILE.exists():
+    if not _initialized:
         init_secrets()
     return _secrets.get(key)
 
@@ -119,13 +119,13 @@ def delete(key: str) -> bool:
 
 def list_keys() -> list[str]:
     """List all secret key names (not values)."""
-    if not _secrets and SECRETS_FILE.exists():
+    if not _initialized:
         init_secrets()
     return list(_secrets.keys())
 
 
 def has(key: str) -> bool:
     """Check if a secret exists."""
-    if not _secrets and SECRETS_FILE.exists():
+    if not _initialized:
         init_secrets()
     return key in _secrets

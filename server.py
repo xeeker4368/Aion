@@ -43,7 +43,8 @@ import skills
 import debug
 import search_limiter
 
-from config import LIVE_CHUNK_INTERVAL, CONTEXT_WINDOW
+from config import LIVE_CHUNK_INTERVAL, CONTEXT_WINDOW, DEV_MODE
+import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aion")
@@ -56,6 +57,47 @@ _active_conversation_id: str | None = None
 async def lifespan(app: FastAPI):
     """Initialize all systems on startup."""
     logger.info("Initializing Aion...")
+
+    # Dev mode: copy production databases if dev directory is fresh
+    if DEV_MODE:
+        from pathlib import Path
+        import shutil
+        import sqlite3
+
+        dev_dir = Path(config.DATA_DIR) / "dev"
+        prod_archive = Path(config.DATA_DIR) / "archive.db"
+        prod_working = Path(config.DATA_DIR) / "working.db"
+        prod_chroma = Path(config.DATA_DIR) / "chromadb"
+
+        dev_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy SQLite databases using backup API (safe for live DBs)
+        if prod_archive.exists() and not (dev_dir / "archive.db").exists():
+            src = sqlite3.connect(str(prod_archive))
+            dst = sqlite3.connect(str(dev_dir / "archive.db"))
+            src.backup(dst)
+            dst.close()
+            src.close()
+            logger.info("DEV MODE: Copied archive.db to dev/")
+
+        if prod_working.exists() and not (dev_dir / "working.db").exists():
+            src = sqlite3.connect(str(prod_working))
+            dst = sqlite3.connect(str(dev_dir / "working.db"))
+            src.backup(dst)
+            dst.close()
+            src.close()
+            logger.info("DEV MODE: Copied working.db to dev/")
+
+        # Copy ChromaDB directory
+        if prod_chroma.exists() and not (dev_dir / "chromadb").exists():
+            shutil.copytree(str(prod_chroma), str(dev_dir / "chromadb"))
+            logger.info("DEV MODE: Copied chromadb/ to dev/")
+
+        logger.warning("=" * 50)
+        logger.warning("  DEV MODE ACTIVE — using data/dev/")
+        logger.warning("  Production data is NOT being modified.")
+        logger.warning("  Delete data/dev/ to reset.")
+        logger.warning("=" * 50)
 
     # Core systems
     db.init_databases()
@@ -76,7 +118,7 @@ async def lifespan(app: FastAPI):
             messages = db.get_conversation_messages(conv["id"])
             if messages:
                 chunk_messages = messages[-remaining:]
-                chunk_index = conv_msg_count // LIVE_CHUNK_INTERVAL
+                chunk_index = memory.remainder_chunk_index(conv_msg_count)
                 memory.create_live_chunk(conv["id"], chunk_messages, chunk_index)
                 db.mark_conversation_chunked(conv["id"])
                 logger.info(
@@ -95,7 +137,10 @@ async def lifespan(app: FastAPI):
     debug.init_debug()
     debug.log_startup_banner()
 
-    logger.info("Aion ready.")
+    if DEV_MODE:
+        logger.warning("Aion ready. (DEV MODE)")
+    else:
+        logger.info("Aion ready.")
     yield
     logger.info("Aion shutting down.")
 
@@ -156,7 +201,7 @@ def _end_active_conversation():
         if remaining > 0:
             messages = db.get_conversation_messages(conv_id)
             chunk_messages = messages[-remaining:]
-            chunk_index = msg_count // LIVE_CHUNK_INTERVAL
+            chunk_index = memory.remainder_chunk_index(msg_count)
 
             memory.create_live_chunk(conv_id, chunk_messages, chunk_index)
             db.mark_conversation_chunked(conv_id)
@@ -190,7 +235,7 @@ def _maybe_create_live_chunk(conversation_id: str, message_count: int):
     if memory.should_create_live_chunk(message_count):
         messages = db.get_conversation_messages(conversation_id)
         chunk_messages = messages[-LIVE_CHUNK_INTERVAL:]
-        chunk_index = message_count // LIVE_CHUNK_INTERVAL
+        chunk_index = memory.live_chunk_index(message_count)
 
         memory.create_live_chunk(conversation_id, chunk_messages, chunk_index)
         logger.info(
@@ -248,20 +293,61 @@ def _targets_realtime_skill(message: str) -> bool:
     Detect if a message is asking about a realtime skill's domain.
 
     Realtime data should come from live tool calls, not from memory.
-    When someone asks "what's on moltbook?" they want current data,
-    not memories of what was there last week.
+    When someone asks "what's on moltbook?" or "check the submolts"
+    they want current data, not memories of what was there last week.
+
+    Trigger keywords are defined in each skill's SKILL.md frontmatter.
 
     Returns True if retrieval should be skipped in favor of tool calls.
     """
     msg = message.lower().strip()
 
-    # Get realtime skill names
     realtime_skills = [s for s in skills.get_ready_skills() if s.get("realtime")]
 
     for skill in realtime_skills:
-        skill_name = skill["name"].lower()
-        if skill_name in msg:
-            return True
+        triggers = skill.get("triggers", [skill["name"]])
+        for trigger in triggers:
+            if trigger.lower() in msg:
+                return True
+
+    return False
+
+
+def _has_tool_intent(response_text: str) -> bool:
+    """
+    Detect if the entity's response expresses intent to use a tool.
+
+    The entity sees skill descriptions and knows what tools exist.
+    When it wants to use one, it mentions it in its response.
+    This checks for those signals.
+
+    Must be broad enough to catch natural language variations.
+    A miss here means the entity fabricates results instead of
+    calling the real API.
+    """
+    if not response_text:
+        return False
+
+    text = response_text.lower()
+
+    # Tool name signals (exact names and natural language variants)
+    tool_signals = [
+        "web_search", "web_fetch", "http_request", "http request",
+        "let me search", "let me look", "i'll search", "i'll look up",
+        "i can search", "i can look up", "let me check",
+        "i'll check moltbook", "let me check moltbook",
+        "search for", "look up", "look that up",
+        "search the web", "check the web",
+        "use the api", "call the api", "check the api",
+        "making a request", "making an http",
+    ]
+
+    if any(signal in text for signal in tool_signals):
+        return True
+
+    # If the response contains any known API endpoint URL, that's intent
+    if "moltbook.com/api/" in text:
+        return True
 
     return False
 
@@ -393,9 +479,10 @@ async def handle_chat(request: ChatRequest):
         )
         logger.info(f"Retrieved {len(retrieved_chunks)} chunks")
         for i, chunk in enumerate(retrieved_chunks):
-            dist = chunk.get("distance", "?")
+            dist = chunk.get("distance")
+            dist_str = f"{dist:.4f}" if isinstance(dist, (int, float)) else "?"
             preview = chunk.get("text", "")[:80].replace("\n", " ")
-            logger.info(f"  Chunk {i}: [{dist:.4f}] {preview}...")
+            logger.info(f"  Chunk {i}: [{dist_str}] {preview}...")
 
     # 4. Check for document ingestion (special case — not a tool call)
     ingest_result = None
@@ -405,26 +492,20 @@ async def handle_chat(request: ChatRequest):
         logger.info(f"Document ingestion: {ingest_url}")
 
     # 5. Skill descriptions for system prompt
-    skill_desc = skills.get_skill_descriptions()
+    skill_desc = skills.get_skill_descriptions(request.message)
 
-    # 6. Tool definitions for the model (skip on trivial messages — just talk)
-    if _is_trivial_message(request.message):
-        tool_definitions = []
-    else:
-        tool_definitions = executors.get_tool_definitions()
-
-    # 7. Assemble system prompt
+    # 6. Assemble system prompt
     system_prompt = chat.build_system_prompt(
         retrieved_chunks=retrieved_chunks,
         skill_descriptions=skill_desc,
         ingest_result=ingest_result,
     )
 
-    # 8. Trim conversation for context
+    # 7. Trim conversation for context
     conversation_messages = db.get_conversation_messages(conversation_id)
     trimmed_messages = chat.trim_conversation_for_context(conversation_messages)
 
-    # 9. Debug logging
+    # 8. Debug logging
     total_tokens = debug.estimate_tokens(system_prompt) + sum(
         debug.estimate_tokens(m["content"]) for m in trimmed_messages
     )
@@ -433,13 +514,13 @@ async def handle_chat(request: ChatRequest):
         "conversation_id": conversation_id,
         "message_number": msg_count,
         "user_message": request.message,
-        "retrieval_skipped": _is_trivial_message(request.message),
+        "retrieval_skipped": _is_trivial_message(request.message) or _targets_realtime_skill(request.message),
         "chunks_count": len(retrieved_chunks),
         "chunks_tokens": debug.estimate_tokens(
             "\n".join(c.get("text", "") for c in retrieved_chunks)
         ),
         "skills_tokens": debug.estimate_tokens(skill_desc),
-        "tools_count": len(tool_definitions),
+        "tools_count": 0,
         "soul_tokens": debug.estimate_tokens(chat.load_soul()),
         "system_prompt_total_tokens": debug.estimate_tokens(system_prompt),
         "conversation_history_tokens": sum(
@@ -456,13 +537,24 @@ async def handle_chat(request: ChatRequest):
     }
     debug.log_request(request_data)
 
-    # 10. Send to model with tool definitions
+    # 9. Two-pass tool calling
+    # Pass 1: No tool definitions — entity responds naturally
+    # If it needs tools, it says so. If it doesn't, we're done.
     response_text, tool_calls_made = chat.send_message(
         system_prompt,
         trimmed_messages,
-        tool_definitions=tool_definitions,
-        tool_executor=_execute_tool_call,
     )
+
+    # Pass 2: If entity expressed tool intent, re-call with tools enabled
+    if not _is_trivial_message(request.message) and _has_tool_intent(response_text):
+        logger.info("Tool intent detected in response. Re-calling with tools.")
+        tool_definitions = executors.get_tool_definitions()
+        response_text, tool_calls_made = chat.send_message(
+            system_prompt,
+            trimmed_messages,
+            tool_definitions=tool_definitions,
+            tool_executor=_execute_tool_call,
+        )
 
     # 11. Log response and tool usage
     response_tokens = debug.estimate_tokens(response_text)
@@ -494,7 +586,7 @@ async def handle_chat(request: ChatRequest):
         "tokens_used": total_tokens,
         "tokens_headroom": CONTEXT_WINDOW - total_tokens,
         "context_window": CONTEXT_WINDOW,
-        "retrieval_skipped": _is_trivial_message(request.message),
+        "retrieval_skipped": _is_trivial_message(request.message) or _targets_realtime_skill(request.message),
         "breakdown": {
             "soul": debug.estimate_tokens(chat.load_soul()),
             "chunks": debug.estimate_tokens(
@@ -514,7 +606,7 @@ async def handle_chat(request: ChatRequest):
             for c in retrieved_chunks
         ],
         "tools": {
-            "definitions_count": len(tool_definitions),
+            "calls_count": len(tool_calls_made),
             "calls_made": [
                 {"name": tc["name"], "arguments": tc["arguments"]}
                 for tc in tool_calls_made

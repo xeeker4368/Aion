@@ -98,6 +98,9 @@ def summarize_documents():
 
     logger.info(f"Found {len(pending)} documents to summarize.")
 
+    import memory
+    memory.init_memory()
+
     for doc in pending:
         doc_id = doc["id"]
         title = doc["title"]
@@ -106,8 +109,6 @@ def summarize_documents():
         # Get the chunks from ChromaDB for this document
         collection = None
         try:
-            import memory
-            memory.init_memory()
             collection = memory._get_collection()
             results = collection.get(
                 where={"conversation_id": {"$eq": doc_id}},

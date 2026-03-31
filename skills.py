@@ -66,6 +66,8 @@ def _load_skill(path: Path):
             "version": frontmatter.get("version", "1.0.0"),
             "requires": frontmatter.get("requires", {}),
             "realtime": frontmatter.get("realtime", False),
+            "progressive": frontmatter.get("progressive", False),
+            "triggers": frontmatter.get("triggers", [name]),
             "tools": [],  # Tools now come from executors, not skills
             "instructions": body,
             "path": str(path),
@@ -161,22 +163,42 @@ def get_ready_skills() -> list[dict]:
     return [s for s in _skills.values() if s["status"]["ready"]]
 
 
-def get_skill_descriptions() -> str:
+def get_skill_descriptions(message: str = "") -> str:
     """
     Get skill descriptions and instructions for the system prompt.
-    The entity reads these as documentation to know how to use
-    its generic tools (http_request, web_search, etc.) for specific purposes.
+
+    Progressive disclosure: skills with progressive=true only load
+    their full instructions when the message matches their triggers.
+    Otherwise, a one-line description is loaded instead.
+    This prevents domain-specific API docs from drowning identity
+    on every message.
     """
     ready = get_ready_skills()
     if not ready:
         return ""
 
+    msg = message.lower().strip()
     parts = []
+
     for s in ready:
-        # Include body instructions — this is the documentation the entity reads
         instructions = s.get("instructions", "").strip()
-        if instructions:
-            parts.append(instructions)
+
+        if s.get("progressive") and msg:
+            # Only load full body if message matches a trigger
+            triggers = s.get("triggers", [s["name"]])
+            triggered = any(t.lower() in msg for t in triggers)
+
+            if triggered and instructions:
+                parts.append(instructions)
+            else:
+                # One-line summary — entity knows the skill exists
+                desc = s.get("description", "")
+                if desc:
+                    parts.append(f"You have access to {s['name']}: {desc}")
+        else:
+            # Non-progressive skills always load full body
+            if instructions:
+                parts.append(instructions)
 
     return "\n\n".join(parts)
 

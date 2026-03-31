@@ -5,14 +5,27 @@ Every tunable setting in one place. Change values here,
 not scattered across the codebase.
 """
 
+import os
+import sys
 from pathlib import Path
+
+# --- Dev Mode ---
+DEV_MODE = "--dev" in sys.argv or os.environ.get("AION_DEV_MODE") == "1"
 
 # --- Paths ---
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
-ARCHIVE_DB = DATA_DIR / "archive.db"
-WORKING_DB = DATA_DIR / "working.db"
-CHROMA_DIR = str(DATA_DIR / "chromadb")
+
+# In dev mode, databases go to data/dev/ — production data is untouched.
+# Vault, logs, and search limiter stay in data/ (shared).
+if DEV_MODE:
+    _DB_DIR = DATA_DIR / "dev"
+else:
+    _DB_DIR = DATA_DIR
+
+ARCHIVE_DB = _DB_DIR / "archive.db"
+WORKING_DB = _DB_DIR / "working.db"
+CHROMA_DIR = str(_DB_DIR / "chromadb")
 SOUL_PATH = BASE_DIR / "soul.md"
 
 # --- Ollama ---
@@ -43,14 +56,7 @@ RETRIEVAL_RESULTS = 5  # number of chunks to retrieve per search
 
 # --- Search Rate Limiting ---
 SEARCH_MONTHLY_LIMIT = 1000  # Tavily free tier: 1000/month
-SEARCH_FETCH_MAX_CHARS = 4000  # Max chars to include from fetched page
 
 # --- Document Ingestion ---
 INGEST_CHUNK_SIZE = 1500       # chars per chunk (roughly 375 tokens)
 INGEST_CHUNK_OVERLAP = 200     # chars overlap between chunks
-
-# --- Retrieval-Aware Search Gating ---
-# If any chunk scores below this distance, memory is confident — skip web search.
-# Lower distance = closer match. Cosine distance: 0.0 = identical, 2.0 = opposite.
-# 0.35 is conservative — only strong matches suppress search.
-MEMORY_CONFIDENCE_THRESHOLD = 0.35

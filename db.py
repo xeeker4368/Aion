@@ -11,7 +11,7 @@ If the working store gets corrupted, rebuild it from the archive.
 
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from config import ARCHIVE_DB, WORKING_DB, DATA_DIR
@@ -93,6 +93,15 @@ def init_databases():
                 created_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS observations (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                message_count INTEGER,
+                created_at TEXT NOT NULL
+            )
+        """)
         # Migration: add consolidated column if upgrading from Phase 1
         _migrate_working_db(conn)
 
@@ -103,6 +112,12 @@ def _migrate_working_db(conn):
     if "consolidated" not in columns:
         conn.execute(
             "ALTER TABLE conversations ADD COLUMN consolidated INTEGER DEFAULT 0"
+        )
+
+    doc_columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+    if "summary" not in doc_columns:
+        conn.execute(
+            "ALTER TABLE documents ADD COLUMN summary TEXT"
         )
 
 
@@ -128,6 +143,15 @@ def end_conversation(conversation_id: str):
             "UPDATE conversations SET ended_at = ? WHERE id = ?",
             (now, conversation_id),
         )
+
+
+def get_active_conversations() -> list[dict]:
+    """Get all conversations that haven't been ended."""
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM conversations WHERE ended_at IS NULL"
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def save_message(conversation_id: str, role: str, content: str) -> dict:
@@ -308,18 +332,11 @@ def get_unsummarized_documents() -> list[dict]:
 
 
 def mark_document_summarized(doc_id: str, summary: str):
-    """Save summary and mark document as summarized."""
-    now = datetime.now(timezone.utc).isoformat()
+    """Save summary directly on the document and mark as summarized."""
     with _connect(WORKING_DB) as conn:
-        summary_id = str(uuid.uuid4())
         conn.execute(
-            "INSERT OR REPLACE INTO summaries (id, conversation_id, content, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (summary_id, doc_id, summary, now),
-        )
-        conn.execute(
-            "UPDATE documents SET summarized = 1 WHERE id = ?",
-            (doc_id,),
+            "UPDATE documents SET summarized = 1, summary = ? WHERE id = ?",
+            (summary, doc_id),
         )
 
 
@@ -332,5 +349,89 @@ def get_recent_summaries(limit: int = 5) -> list[dict]:
             "JOIN conversations c ON s.conversation_id = c.id "
             "ORDER BY c.started_at DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_conversations_ended_since(hours: int = 24) -> list[dict]:
+    """Get conversations that ended within the last N hours."""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).isoformat()
+
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM conversations "
+            "WHERE ended_at IS NOT NULL AND ended_at > ? "
+            "ORDER BY ended_at",
+            (cutoff,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def save_observation(conversation_id: str, content: str,
+                     message_count: int) -> dict:
+    """Save a personality observation for a single conversation."""
+    obs_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _connect(WORKING_DB) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO observations "
+            "(id, conversation_id, content, message_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (obs_id, conversation_id, content, message_count, now),
+        )
+
+    return {
+        "id": obs_id,
+        "conversation_id": conversation_id,
+        "content": content,
+        "message_count": message_count,
+    }
+
+
+def get_all_observations() -> list[dict]:
+    """Get all observations in chronological order. For the profile generator."""
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT o.*, c.started_at FROM observations o "
+            "JOIN conversations c ON o.conversation_id = c.id "
+            "ORDER BY c.started_at ASC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_latest_observation() -> dict | None:
+    """Get the most recent observation."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT o.*, c.started_at FROM observations o "
+            "JOIN conversations c ON o.conversation_id = c.id "
+            "ORDER BY c.started_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_observation_for_conversation(conversation_id: str) -> dict | None:
+    """Check if a conversation has already been observed."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT * FROM observations WHERE conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_documents_since(hours: int = 24) -> list[dict]:
+    """Get documents ingested within the last N hours."""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).isoformat()
+
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM documents WHERE created_at > ? ORDER BY created_at",
+            (cutoff,),
         ).fetchall()
     return [dict(row) for row in rows]
