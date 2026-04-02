@@ -1,817 +1,838 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aion</title>
-    <style>
-        :root {
-            --bg-deep: #0c0c0e;
-            --bg-base: #111113;
-            --bg-surface: #141416;
-            --bg-elevated: #161618;
-            --bg-hover: rgba(255,255,255,0.06);
-            --bg-active: rgba(99,140,255,0.12);
-            --border: rgba(255,255,255,0.06);
-            --border-subtle: rgba(255,255,255,0.04);
-            --text-primary: #f0f0f0;
-            --text-body: #d4d4d4;
-            --text-muted: rgba(255,255,255,0.4);
-            --text-faint: rgba(255,255,255,0.25);
-            --text-ghost: rgba(255,255,255,0.15);
-            --accent: #638CFF;
-            --accent-bg: rgba(99,140,255,0.12);
-            --accent-bg-strong: rgba(99,140,255,0.2);
-            --user-bubble: rgba(99,140,255,0.12);
-            --user-text: #c8d8f8;
-            --ai-bubble: rgba(255,255,255,0.04);
-            --green: #34D399;
-            --green-bg: rgba(52,211,153,0.08);
-            --green-text: rgba(52,211,153,0.7);
-            --amber-bg: rgba(251,191,36,0.08);
-            --amber-text: rgba(251,191,36,0.6);
-            --red: #EF4444;
-            --panel-transition: 0.25s ease;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Aion</title>
+<style>
+:root {
+    --bg-deep: #0c0c0e;
+    --bg-base: #111113;
+    --bg-surface: #141416;
+    --bg-elevated: #18181b;
+    --bg-hover: rgba(255,255,255,0.05);
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --text: #e4e4e7;
+    --text-muted: rgba(255,255,255,0.5);
+    --text-faint: rgba(255,255,255,0.28);
+    --accent: #638CFF;
+    --accent-bg: rgba(99,140,255,0.1);
+    --accent-text: #a4bfff;
+    --green: #34D399;
+    --green-bg: rgba(52,211,153,0.1);
+    --green-text: rgba(52,211,153,0.8);
+    --amber: #FBBF24;
+    --amber-bg: rgba(251,191,36,0.1);
+    --amber-text: rgba(251,191,36,0.8);
+    --red: #EF4444;
+    --red-bg: rgba(239,68,68,0.1);
+    --red-text: rgba(239,68,68,0.8);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --radius-lg: 14px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-base);
+    color: var(--text);
+    height: 100vh; height: 100dvh;
+    overflow: hidden;
+}
+.app { display: flex; height: 100%; }
 
-        * { margin:0; padding:0; box-sizing:border-box; }
+/* === ICON RAIL === */
+.rail {
+    width: 52px; background: var(--bg-deep);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 14px 0; gap: 4px;
+    border-right: 0.5px solid var(--border);
+    flex-shrink: 0; z-index: 10;
+}
+.rail-logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--accent-bg);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 12px;
+    font-size: 13px; font-weight: 600; color: var(--accent);
+}
+.rail-btn {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none; background: none; padding: 0;
+    transition: background 0.15s;
+}
+.rail-btn:hover { background: var(--bg-hover); }
+.rail-btn.active { background: var(--accent-bg); }
+.rail-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); stroke-width: 1.7; fill: none; }
+.rail-btn.active svg { stroke: var(--accent); }
+.rail-spacer { flex: 1; }
 
-        body {
-            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-base);
-            color: var(--text-body);
-            height: 100vh;
-            height: 100dvh;
-            overflow: hidden;
-        }
+/* === VIEWS === */
+.view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.view.active { display: flex; }
 
-        /* ============================================
-           DESKTOP LAYOUT
-           ============================================ */
-        .app-shell {
-            display: flex;
-            height: 100%;
-        }
+/* === DEV BANNER === */
+.dev-banner {
+    background: var(--amber-bg); border-bottom: 0.5px solid rgba(251,191,36,0.2);
+    padding: 8px 16px; font-size: 12px; color: var(--amber-text);
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.dev-banner:empty { display: none; }
 
-        /* Icon rail - always visible on desktop */
-        .icon-rail {
-            width: 56px;
-            background: var(--bg-deep);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 16px 0;
-            gap: 6px;
-            border-right: 0.5px solid var(--border);
-            flex-shrink: 0;
-        }
+/* === CHAT VIEW === */
+.chat-header {
+    padding: 10px 16px; display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 0.5px solid var(--border); flex-shrink: 0;
+}
+.chat-header-left { display: flex; align-items: center; gap: 8px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.chat-header-title { font-size: 14px; font-weight: 500; }
+.chat-header-meta { font-size: 11px; color: var(--text-faint); }
+.chat-body { display: flex; flex: 1; overflow: hidden; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 72%; padding: 10px 14px; font-size: 14px; line-height: 1.6; word-wrap: break-word; white-space: pre-wrap; }
+.msg.user { align-self: flex-end; background: var(--accent-bg); border-radius: 16px 16px 4px 16px; color: var(--accent-text); }
+.msg.assistant { align-self: flex-start; background: var(--bg-surface); border-radius: 16px 16px 16px 4px; }
+.msg.system-msg { align-self: center; font-size: 12px; color: var(--text-faint); padding: 4px 12px; }
+.msg-meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: -2px; margin-bottom: 4px; }
+.pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--bg-surface); color: var(--text-faint); }
+.pill.tool { background: var(--accent-bg); color: var(--accent); }
+.thinking { align-self: flex-start; font-size: 13px; color: var(--text-faint); padding: 10px 14px; }
+.thinking::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
+@keyframes dots { 0%,20%{content:''} 40%{content:'.'} 60%{content:'..'} 80%,100%{content:'...'} }
+.chat-input-area { padding: 12px 16px; border-top: 0.5px solid var(--border); flex-shrink: 0; }
+.chat-input-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-input {
+    flex: 1; padding: 9px 12px; border-radius: var(--radius);
+    border: 0.5px solid var(--border); background: var(--bg-surface);
+    color: var(--text); font-size: 14px; font-family: inherit;
+    resize: none; outline: none; min-height: 38px; max-height: 120px;
+}
+.chat-input:focus { border-color: var(--border-hover); }
+.chat-input::placeholder { color: var(--text-faint); }
+.send-btn {
+    width: 38px; height: 38px; border-radius: var(--radius);
+    background: var(--accent-bg); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.send-btn:hover { background: rgba(99,140,255,0.18); }
+.send-btn svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 2; }
+.send-btn:disabled { opacity: 0.3; cursor: default; }
 
-        .logo {
-            width: 32px; height: 32px;
-            border-radius: 8px;
-            background: var(--accent-bg);
-            display: flex; align-items: center; justify-content: center;
-            margin-bottom: 12px;
-        }
-        .logo span { font-size: 14px; font-weight: 600; color: var(--accent); }
+/* Context panel */
+.ctx-panel {
+    width: 240px; background: var(--bg-surface); border-left: 0.5px solid var(--border);
+    padding: 12px; overflow-y: auto; flex-shrink: 0;
+    transition: width 0.2s ease, opacity 0.15s ease;
+}
+.ctx-panel.collapsed { width: 0; padding: 0; opacity: 0; overflow: hidden; border: none; }
+.ctx-label { font-size: 11px; color: var(--text-faint); margin-bottom: 8px; text-transform: lowercase; }
+.ctx-section { margin-bottom: 16px; }
+.ctx-stat-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.ctx-stat { flex: 1; background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 8px; }
+.ctx-stat-val { font-size: 15px; font-weight: 500; }
+.ctx-stat-lbl { font-size: 10px; color: var(--text-faint); }
+.ctx-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); padding: 3px 0; }
+.ctx-bar { height: 4px; background: var(--bg-elevated); border-radius: 2px; overflow: hidden; margin: 6px 0 4px; }
+.ctx-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+.ctx-bar-lbl { font-size: 10px; color: var(--text-faint); }
+.ctx-chunk { background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 6px; font-size: 11px; }
+.ctx-chunk-head { display: flex; justify-content: space-between; color: var(--text-faint); margin-bottom: 4px; }
+.ctx-chunk-text { color: var(--text-muted); line-height: 1.4; }
+.ctx-tool { background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 8px; font-size: 11px; margin-bottom: 6px; }
+.ctx-empty { font-size: 12px; color: var(--text-faint); font-style: italic; }
+.toggle-ctx {
+    width: 26px; height: 26px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border); background: none;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.toggle-ctx:hover { background: var(--bg-hover); }
+.toggle-ctx svg { width: 14px; height: 14px; stroke: var(--text-muted); fill: none; stroke-width: 1.7; }
+.toggle-ctx.active svg { stroke: var(--accent); }
 
-        .rail-btn {
-            width: 36px; height: 36px;
-            border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; border: none; background: none; padding: 0;
-            transition: background 0.15s;
-        }
-        .rail-btn:hover { background: var(--bg-hover); }
-        .rail-btn.active { background: var(--accent-bg); }
-        .rail-btn svg { width: 17px; height: 17px; stroke: var(--text-muted); stroke-width: 1.8; fill: none; }
-        .rail-btn.active svg { stroke: var(--accent); }
+/* New conversation button */
+.new-conv-btn {
+    padding: 5px 12px; border-radius: var(--radius-sm); font-size: 11px;
+    color: var(--text-muted); background: var(--bg-hover); border: none;
+    cursor: pointer; font-family: inherit;
+}
+.new-conv-btn:hover { background: var(--bg-surface); color: var(--text); }
 
-        .rail-spacer { flex: 1; }
+/* === SCROLLABLE VIEW === */
+.scroll-view { flex: 1; overflow-y: auto; padding: 20px 24px; }
 
-        /* Left panel - conversation list */
-        .left-panel {
-            width: 240px;
-            background: var(--bg-surface);
-            border-right: 0.5px solid var(--border);
-            display: flex; flex-direction: column;
-            flex-shrink: 0;
-            transition: width var(--panel-transition), opacity 0.2s ease;
-            overflow: hidden;
-        }
-        .left-panel.collapsed { width: 0; opacity: 0; border-right: none; }
+/* === DASHBOARD VIEW === */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.stat-card { background: var(--bg-surface); border-radius: var(--radius); padding: 14px; }
+.stat-card-val { font-size: 22px; font-weight: 500; }
+.stat-card-val span { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.stat-card-lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.card { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 14px; }
+.card-title { font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+.health-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-dot.ok { background: var(--green); }
+.health-dot.warn { background: var(--amber); }
+.health-dot.err { background: var(--red); }
+.health-name { font-size: 13px; color: var(--text-muted); margin-left: 8px; }
+.health-detail { font-size: 12px; color: var(--text-faint); }
+.step-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; }
+.step-icon { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 11px; margin-top: 1px; }
+.step-icon.ok { background: var(--green-bg); color: var(--green-text); }
+.step-icon.fail { background: var(--red-bg); color: var(--red-text); }
+.step-icon.skip { background: var(--bg-hover); color: var(--text-faint); }
+.step-name { font-size: 13px; font-weight: 500; }
+.step-detail { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.step-name.fail { color: var(--red-text); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.storage-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); padding: 4px 0; }
 
-        .panel-header {
-            padding: 14px 16px;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .panel-title {
-            font-size: 13px; font-weight: 500;
-            color: rgba(255,255,255,0.6);
-        }
+/* === ACTIVITY VIEW === */
+.activity-tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+.activity-tab {
+    padding: 6px 14px; border-radius: 20px; font-size: 12px;
+    color: var(--text-muted); background: var(--bg-surface);
+    border: 0.5px solid var(--border); cursor: pointer; font-family: inherit;
+}
+.activity-tab:hover { background: var(--bg-hover); color: var(--text); }
+.activity-tab.active { background: var(--accent-bg); color: var(--accent); border-color: rgba(99,140,255,0.2); }
+.entry { background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; cursor: pointer; transition: background 0.1s; }
+.entry:hover { background: var(--bg-elevated); }
+.entry-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.entry-date { font-size: 13px; font-weight: 500; }
+.entry-type { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+.entry-type.journal { background: var(--accent-bg); color: var(--accent); }
+.entry-type.research { background: var(--green-bg); color: var(--green-text); }
+.entry-type.observation { background: var(--amber-bg); color: var(--amber-text); }
+.entry-preview { font-size: 13px; color: var(--text-muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.entry-full { display: none; font-size: 13px; color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border); }
+.entry.expanded .entry-preview { display: none; }
+.entry.expanded .entry-full { display: block; }
+.entry-empty { text-align: center; padding: 40px 20px; color: var(--text-faint); font-size: 13px; }
 
-        .icon-btn-sm {
-            width: 24px; height: 24px;
-            border-radius: 6px; background: var(--bg-hover);
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; border: none; padding: 0;
-        }
-        .icon-btn-sm svg { width: 12px; height: 12px; stroke: var(--text-muted); stroke-width: 2.5; fill: none; }
+/* === SETTINGS VIEW === */
+.settings-group { margin-bottom: 24px; }
+.settings-group-title { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 10px; text-transform: lowercase; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; gap: 12px; }
+.setting-key { font-size: 13px; color: var(--text); flex-shrink: 0; }
+.setting-val {
+    font-size: 13px; color: var(--text); background: var(--bg-elevated);
+    border: 0.5px solid var(--border); border-radius: var(--radius-sm);
+    padding: 5px 10px; text-align: right; font-family: inherit;
+    outline: none; width: 200px;
+}
+.setting-val:focus { border-color: var(--accent); }
+.setting-modified { font-size: 10px; color: var(--accent); margin-left: 4px; }
+.setting-default { font-size: 10px; color: var(--text-faint); margin-left: 4px; }
+.secret-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border: 0.5px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
+.secret-name { font-size: 13px; }
+.secret-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--green-bg); color: var(--green-text); }
+.btn-sm {
+    padding: 5px 12px; border-radius: var(--radius-sm); font-size: 11px;
+    border: 0.5px solid var(--border); background: var(--bg-hover);
+    color: var(--text-muted); cursor: pointer; font-family: inherit;
+}
+.btn-sm:hover { background: var(--bg-surface); color: var(--text); }
+.btn-sm.danger { border-color: rgba(239,68,68,0.3); color: var(--red-text); }
+.btn-sm.danger:hover { background: var(--red-bg); }
+.btn-sm.primary { border-color: rgba(99,140,255,0.3); color: var(--accent); }
+.btn-sm.primary:hover { background: var(--accent-bg); }
+.restart-notice { font-size: 11px; color: var(--amber-text); background: var(--amber-bg); padding: 8px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; display: none; }
 
-        .search-box {
-            margin: 0 10px 8px;
-            padding: 7px 10px;
-            background: rgba(255,255,255,0.04);
-            border-radius: 8px;
-            border: 0.5px solid var(--border);
-            font-size: 12px; color: var(--text-faint);
-            display: flex; align-items: center; gap: 6px;
-        }
-        .search-box input {
-            background: none; border: none; outline: none;
-            color: var(--text-body); font-size: 12px; width: 100%;
-            font-family: inherit;
-        }
-        .search-box input::placeholder { color: var(--text-faint); }
-        .search-box svg { width: 11px; height: 11px; stroke: var(--text-faint); stroke-width: 2; fill: none; flex-shrink: 0; }
-
-        .conv-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-
-        .conv-item {
-            padding: 10px; border-radius: 8px;
-            margin-bottom: 2px; cursor: pointer;
-            transition: background 0.1s;
-        }
-        .conv-item:hover { background: var(--bg-hover); }
-        .conv-item.active {
-            background: var(--accent-bg);
-            border: 0.5px solid rgba(99,140,255,0.15);
-        }
-        .conv-item-title {
-            font-size: 12px; color: rgba(255,255,255,0.6);
-            margin-bottom: 2px; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis;
-        }
-        .conv-item.active .conv-item-title { color: var(--text-primary); font-weight: 500; }
-        .conv-item-meta { font-size: 10px; color: var(--text-faint); }
-
-        /* Center chat area */
-        .chat-area {
-            flex: 1; display: flex; flex-direction: column; min-width: 0;
-        }
-
-        .chat-header {
-            padding: 10px 20px;
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 0.5px solid var(--border);
-            background: var(--bg-elevated);
-            flex-shrink: 0;
-        }
-
-        .toggle-btn {
-            width: 28px; height: 28px;
-            border-radius: 6px; background: var(--bg-hover);
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; border: none; padding: 0;
-            transition: background 0.15s;
-        }
-        .toggle-btn:hover { background: rgba(255,255,255,0.1); }
-        .toggle-btn.active { background: rgba(99,140,255,0.15); }
-        .toggle-btn svg { width: 14px; height: 14px; stroke: rgba(255,255,255,0.5); stroke-width: 2; fill: none; }
-        .toggle-btn.active svg { stroke: var(--accent); }
-
-        .status-dot {
-            width: 7px; height: 7px; border-radius: 50%;
-            background: var(--green); flex-shrink: 0;
-        }
-
-        .header-title { font-size: 14px; font-weight: 500; color: var(--text-primary); }
-        .header-meta { font-size: 11px; color: var(--text-faint); }
-
-        .btn-subtle {
-            padding: 4px 10px; border-radius: 6px;
-            font-size: 11px; color: var(--text-muted);
-            background: rgba(255,255,255,0.04);
-            cursor: pointer; border: none; font-family: inherit;
-            transition: background 0.15s;
-        }
-        .btn-subtle:hover { background: var(--bg-hover); color: var(--text-body); }
-
-        /* Messages */
-        .messages {
-            flex: 1; overflow-y: auto;
-            padding: 20px 24px;
-            display: flex; flex-direction: column; gap: 12px;
-        }
-
-        .msg {
-            max-width: 70%; padding: 10px 16px;
-            font-size: 14px; line-height: 1.6;
-            word-wrap: break-word; white-space: pre-wrap;
-        }
-        .msg.user {
-            align-self: flex-end;
-            background: var(--user-bubble);
-            border-radius: 18px 18px 4px 18px;
-            color: var(--user-text);
-        }
-        .msg.assistant {
-            align-self: flex-start;
-            background: var(--ai-bubble);
-            border-radius: 18px 18px 18px 4px;
-            color: var(--text-body);
-        }
-        .msg.system-msg {
-            align-self: center; background: none;
-            color: var(--text-faint); font-size: 12px;
-            font-style: italic; padding: 4px 0;
-        }
-
-        .msg-meta {
-            display: flex; gap: 4px; margin-top: 4px;
-            flex-wrap: wrap; align-self: flex-start;
-        }
-
-        .search-pill {
-            padding: 3px 8px; display: inline-flex;
-            gap: 4px; align-items: center;
-            font-size: 10px; color: var(--green-text);
-            background: var(--green-bg); border-radius: 6px;
-        }
-        .search-pill svg { width: 9px; height: 9px; stroke: currentColor; stroke-width: 2; fill: none; }
-
-        .retrieval-pill {
-            padding: 3px 8px; display: inline-flex;
-            gap: 4px; align-items: center;
-            font-size: 10px; color: var(--text-faint);
-            background: rgba(255,255,255,0.03); border-radius: 6px;
-            border: 0.5px solid var(--border-subtle);
-        }
-
-        /* Thinking indicator */
-        .thinking {
-            align-self: flex-start;
-            color: var(--text-muted);
-            font-size: 13px; padding: 10px 16px;
-        }
-        .thinking::after { content: ''; animation: dots 1.5s infinite; }
-        @keyframes dots {
-            0%, 20% { content: '.'; }
-            40% { content: '..'; }
-            60%, 100% { content: '...'; }
-        }
-
-        /* Mobile info strip */
-        .info-strip {
-            padding: 4px 16px 6px;
-            display: none; gap: 6px; flex-wrap: wrap;
-        }
-        .info-chip {
-            padding: 3px 8px; border-radius: 6px;
-            font-size: 10px; color: var(--text-faint);
-            background: rgba(255,255,255,0.03);
-            border: 0.5px solid var(--border-subtle);
-        }
-
-        /* Input area */
-        .input-area {
-            padding: 10px 16px 12px;
-            background: var(--bg-surface);
-            border-top: 0.5px solid var(--border);
-            display: flex; gap: 10px; align-items: flex-end;
-            flex-shrink: 0;
-        }
-        .input-area textarea {
-            flex: 1; padding: 10px 16px;
-            background: rgba(255,255,255,0.04);
-            border-radius: 20px;
-            border: 0.5px solid rgba(255,255,255,0.08);
-            color: var(--text-body); font-size: 14px;
-            font-family: inherit; line-height: 1.4;
-            resize: none; min-height: 40px; max-height: 120px;
-            outline: none; transition: border-color 0.15s;
-        }
-        .input-area textarea:focus { border-color: rgba(99,140,255,0.4); }
-        .input-area textarea::placeholder { color: var(--text-faint); }
-
-        .send-btn {
-            width: 38px; height: 38px;
-            border-radius: 50%;
-            background: var(--accent-bg-strong);
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; flex-shrink: 0;
-            border: none; padding: 0;
-            transition: background 0.15s, transform 0.1s;
-        }
-        .send-btn:hover { background: rgba(99,140,255,0.3); }
-        .send-btn:active { transform: scale(0.95); }
-        .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .send-btn svg { width: 16px; height: 16px; stroke: var(--accent); stroke-width: 2.5; fill: none; }
-
-        /* Right panel - context/debug */
-        .right-panel {
-            width: 260px;
-            background: var(--bg-surface);
-            border-left: 0.5px solid var(--border);
-            display: flex; flex-direction: column;
-            flex-shrink: 0; overflow-y: auto;
-            transition: width var(--panel-transition), opacity 0.2s ease;
-        }
-        .right-panel.collapsed { width: 0; opacity: 0; border-left: none; overflow: hidden; }
-
-        .ctx-section {
-            padding: 12px 14px;
-            border-bottom: 0.5px solid var(--border-subtle);
-        }
-        .ctx-label {
-            font-size: 10px; color: var(--text-faint);
-            text-transform: uppercase; letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-        .ctx-stat-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-        }
-        .ctx-stat-card {
-            padding: 8px; background: rgba(255,255,255,0.03);
-            border-radius: 6px; text-align: center;
-        }
-        .ctx-stat-val { font-size: 16px; font-weight: 500; color: var(--text-primary); }
-        .ctx-stat-label { font-size: 9px; color: var(--text-faint); margin-top: 1px; }
-
-        .ctx-bar {
-            height: 4px; background: rgba(255,255,255,0.06);
-            border-radius: 2px; overflow: hidden; margin-top: 8px;
-        }
-        .ctx-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
-        .ctx-bar-label { font-size: 9px; color: var(--text-ghost); margin-top: 4px; }
-
-        .ctx-row {
-            display: flex; justify-content: space-between;
-            font-size: 11px; padding: 2px 0;
-        }
-        .ctx-row-name { color: var(--text-muted); }
-        .ctx-row-val { color: var(--text-faint); }
-
-        .ctx-chunk {
-            padding: 8px; background: rgba(255,255,255,0.03);
-            border-radius: 6px; margin-bottom: 6px;
-        }
-        .ctx-chunk-header {
-            display: flex; justify-content: space-between; margin-bottom: 4px;
-        }
-        .ctx-chunk-idx { font-size: 10px; color: rgba(99,140,255,0.6); }
-        .ctx-chunk-dist { font-size: 10px; color: var(--text-ghost); }
-        .ctx-chunk-text { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
-
-        .ctx-search-query {
-            font-size: 10px; color: var(--text-faint);
-            padding: 6px 8px; background: rgba(255,255,255,0.03);
-            border-radius: 4px; font-family: monospace;
-        }
-
-        .ctx-empty { font-size: 11px; color: var(--text-faint); font-style: italic; }
-
-        /* ============================================
-           MOBILE LAYOUT (bottom tab bar)
-           ============================================ */
-        .mobile-tabs {
-            display: none;
-            justify-content: center; gap: 32px;
-            padding: 8px 0 max(8px, env(safe-area-inset-bottom));
-            background: var(--bg-base);
-            border-top: 0.5px solid var(--border-subtle);
-            flex-shrink: 0;
-        }
-        .mobile-tab {
-            display: flex; flex-direction: column;
-            align-items: center; gap: 2px;
-            cursor: pointer; background: none; border: none; padding: 0;
-        }
-        .mobile-tab svg { width: 20px; height: 20px; stroke: var(--text-faint); stroke-width: 1.8; fill: none; }
-        .mobile-tab span { font-size: 9px; color: var(--text-faint); font-family: inherit; }
-        .mobile-tab.active svg { stroke: var(--accent); }
-        .mobile-tab.active span { color: var(--accent); font-weight: 500; }
-
-        @media (max-width: 768px) {
-            .icon-rail { display: none; }
-            .left-panel { display: none; }
-            .right-panel { display: none; }
-            .chat-header .toggle-btn { display: none; }
-            .mobile-tabs { display: flex; }
-            .info-strip { display: flex; }
-            .messages { padding: 16px; }
-            .msg { max-width: 85%; font-size: 14px; }
-            .input-area { padding: 8px 12px 8px; }
-        }
-    </style>
+/* === MOBILE === */
+@media (max-width: 700px) {
+    .rail { display: none; }
+    .ctx-panel { display: none; }
+    .mobile-nav {
+        display: flex !important; justify-content: space-around;
+        padding: 8px 0 env(safe-area-inset-bottom, 8px);
+        border-top: 0.5px solid var(--border); background: var(--bg-deep);
+        flex-shrink: 0;
+    }
+    .mobile-nav button {
+        background: none; border: none; padding: 6px 16px; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .mobile-nav button svg { width: 20px; height: 20px; stroke: var(--text-faint); fill: none; stroke-width: 1.7; }
+    .mobile-nav button.active svg { stroke: var(--accent); }
+    .mobile-nav button span { font-size: 10px; color: var(--text-faint); }
+    .mobile-nav button.active span { color: var(--accent); }
+    .scroll-view { padding: 14px 16px; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .msg { max-width: 88%; }
+    .setting-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .setting-val { width: 100%; text-align: left; }
+}
+.mobile-nav { display: none; }
+</style>
 </head>
 <body>
+<div class="app">
 
-<div class="app-shell">
-    <!-- Icon rail -->
-    <nav class="icon-rail">
-        <div class="logo"><span>A</span></div>
-        <a href="/" class="rail-btn active" title="Chat">
-            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        </a>
-        <a href="/dashboard" class="rail-btn" title="Dashboard">
-            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        </a>
-        <a href="/memory" class="rail-btn" title="Memory">
-            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        </a>
-        <div class="rail-spacer"></div>
-        <a href="/settings" class="rail-btn" title="Settings">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </a>
-    </nav>
+<!-- Icon Rail (desktop) -->
+<nav class="rail">
+    <div class="rail-logo">A</div>
+    <button class="rail-btn active" onclick="switchView('chat')" title="Chat">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    </button>
+    <button class="rail-btn" onclick="switchView('dashboard')" title="Dashboard">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+    <button class="rail-btn" onclick="switchView('activity')" title="Activity">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    </button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" onclick="switchView('settings')" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
+</nav>
 
-    <!-- Left panel: conversations -->
-    <aside class="left-panel" id="leftPanel">
-        <div class="panel-header">
-            <span class="panel-title">Conversations</span>
-            <button class="icon-btn-sm" onclick="newConversation()" title="New conversation">
-                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+<!-- ======== CHAT VIEW ======== -->
+<div id="view-chat" class="view active">
+    <div id="devBanner" class="dev-banner"></div>
+    <div class="chat-header">
+        <div class="chat-header-left">
+            <div class="status-dot" id="statusDot"></div>
+            <span class="chat-header-title">Aion</span>
+            <span class="chat-header-meta" id="chatMeta"></span>
+        </div>
+        <div style="display:flex;gap:6px;">
+            <button class="new-conv-btn" onclick="newConversation()">new</button>
+            <button class="toggle-ctx" id="toggleCtx" onclick="toggleContext()">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
             </button>
         </div>
-        <div class="search-box">
-            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="text" placeholder="Search..." id="convSearch" oninput="filterConversations(this.value)">
+    </div>
+    <div class="chat-body">
+        <div class="chat-messages" id="messages"></div>
+        <div class="ctx-panel" id="ctxPanel">
+            <div id="ctxContent"><div class="ctx-empty">Send a message to see context data.</div></div>
         </div>
-        <div class="conv-list" id="convList"></div>
-    </aside>
-
-    <!-- Main chat area -->
-    <main class="chat-area">
-        <header class="chat-header">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <button class="toggle-btn active" id="leftToggle" onclick="togglePanel('left')" title="Conversations">
-                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
-                </button>
-                <div class="status-dot" id="statusDot"></div>
-                <span class="header-title" id="headerTitle">Aion</span>
-                <span class="header-meta" id="headerMeta"></span>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-                <button class="btn-subtle" onclick="newConversation()">New conversation</button>
-                <button class="toggle-btn active" id="rightToggle" onclick="togglePanel('right')" title="Context panel">
-                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
-                </button>
-            </div>
-        </header>
-
-        <div class="messages" id="messages"></div>
-
-        <!-- Mobile info strip -->
-        <div class="info-strip" id="infoStrip"></div>
-
-        <div class="input-area">
-            <textarea id="input" placeholder="Message..." rows="1"
-                onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    </div>
+    <div class="chat-input-area">
+        <div class="chat-input-row">
+            <input type="file" id="fileInput" style="display:none;" onchange="uploadFile(this)">
+            <button class="send-btn" onclick="document.getElementById('fileInput').click()" title="Upload file" style="background:var(--bg-hover);">
+                <svg viewBox="0 0 24 24" style="stroke:var(--text-muted);"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <textarea class="chat-input" id="chatInput" placeholder="Message..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
             <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-                <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
             </button>
         </div>
-
-        <!-- Mobile tab bar -->
-        <nav class="mobile-tabs">
-            <a href="/" class="mobile-tab active">
-                <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Chat</span>
-            </a>
-            <a href="/dashboard" class="mobile-tab">
-                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                <span>Dashboard</span>
-            </a>
-            <a href="/memory" class="mobile-tab">
-                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                <span>Memory</span>
-            </a>
-            <a href="/settings" class="mobile-tab">
-                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                <span>Settings</span>
-            </a>
-        </nav>
-    </main>
-
-    <!-- Right panel: context/debug -->
-    <aside class="right-panel" id="rightPanel">
-        <div class="ctx-section" style="border-bottom:0.5px solid var(--border);">
-            <span style="font-size:11px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Context panel</span>
-        </div>
-        <div id="ctxContent">
-            <div class="ctx-section">
-                <div class="ctx-empty">Send a message to see context data.</div>
-            </div>
-        </div>
-    </aside>
+    </div>
 </div>
 
-<script>
-const messagesEl = document.getElementById('messages');
-const inputEl = document.getElementById('input');
-const sendBtn = document.getElementById('sendBtn');
-const infoStrip = document.getElementById('infoStrip');
-const ctxContent = document.getElementById('ctxContent');
-const convList = document.getElementById('convList');
+<!-- ======== DASHBOARD VIEW ======== -->
+<div id="view-dashboard" class="view">
+    <div id="devBannerDash" class="dev-banner"></div>
+    <div class="scroll-view" id="dashContent">
+        <div style="color:var(--text-faint);text-align:center;padding:40px;">Loading dashboard...</div>
+    </div>
+</div>
 
+<!-- ======== ACTIVITY VIEW ======== -->
+<div id="view-activity" class="view">
+    <div class="scroll-view">
+        <div class="activity-tabs" id="activityTabs">
+            <button class="activity-tab active" onclick="filterActivity('all')">all</button>
+            <button class="activity-tab" onclick="filterActivity('journal')">journals</button>
+            <button class="activity-tab" onclick="filterActivity('research')">research</button>
+            <button class="activity-tab" onclick="filterActivity('observation')">observations</button>
+            <button class="activity-tab" onclick="filterActivity('overnight')">overnight runs</button>
+        </div>
+        <div id="activityList"></div>
+    </div>
+</div>
+
+<!-- ======== SETTINGS VIEW ======== -->
+<div id="view-settings" class="view">
+    <div class="scroll-view" id="settingsContent">
+        <div style="color:var(--text-faint);text-align:center;padding:40px;">Loading settings...</div>
+    </div>
+</div>
+
+</div>
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-nav">
+    <button class="active" onclick="switchView('chat')">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span>chat</span>
+    </button>
+    <button onclick="switchView('dashboard')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>dashboard</span>
+    </button>
+    <button onclick="switchView('activity')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>activity</span>
+    </button>
+    <button onclick="switchView('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>settings</span>
+    </button>
+</nav>
+
+<script>
+/* ============ STATE ============ */
 let sending = false;
 let lastDebug = null;
-let conversations = [];
+let ctxVisible = true;
+let currentActivityFilter = 'all';
+let _convId = null;
+let _debugCache = {}; // msgIndex -> debug data
 
-/* ---- Panel toggles ---- */
-function togglePanel(side) {
-    const panel = document.getElementById(side === 'left' ? 'leftPanel' : 'rightPanel');
-    const btn = document.getElementById(side === 'left' ? 'leftToggle' : 'rightToggle');
-    panel.classList.toggle('collapsed');
-    btn.classList.toggle('active');
-    localStorage.setItem(side + 'Panel', panel.classList.contains('collapsed') ? 'collapsed' : 'open');
+const msgEl = document.getElementById('messages');
+const inputEl = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const ctxPanel = document.getElementById('ctxPanel');
+const ctxContent = document.getElementById('ctxContent');
+
+/* ============ VIEW SWITCHING ============ */
+function switchView(name) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + name).classList.add('active');
+    document.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.mobile-nav button').forEach(b => b.classList.remove('active'));
+    const idx = {chat:0, dashboard:1, activity:2, settings:3}[name];
+    document.querySelectorAll('.rail-btn')[idx]?.classList.add('active');
+    document.querySelectorAll('.mobile-nav button')[idx]?.classList.add('active');
+    if (name === 'dashboard') loadDashboard();
+    if (name === 'activity') loadActivity();
+    if (name === 'settings') loadSettings();
+    if (name === 'chat') inputEl.focus();
 }
 
-function restorePanels() {
-    if (localStorage.getItem('leftPanel') === 'collapsed') {
-        document.getElementById('leftPanel').classList.add('collapsed');
-        document.getElementById('leftToggle').classList.remove('active');
-    }
-    if (localStorage.getItem('rightPanel') === 'collapsed') {
-        document.getElementById('rightPanel').classList.add('collapsed');
-        document.getElementById('rightToggle').classList.remove('active');
-    }
-}
-
-/* ---- Conversations sidebar ---- */
-async function loadConversations() {
-    try {
-        const res = await fetch('/api/conversations');
-        const data = await res.json();
-        conversations = data.conversations || [];
-        renderConversations(conversations);
-    } catch(e) { console.error(e); }
-}
-
-function renderConversations(list) {
-    if (!list.length) {
-        convList.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--text-faint);font-style:italic;">No conversations yet.</div>';
-        return;
-    }
-    convList.innerHTML = list.map((c, i) => {
-        const date = new Date(c.started_at);
-        const time = date.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-        const day = isToday(date) ? 'Today' : date.toLocaleDateString([], {month:'short',day:'numeric'});
-        const active = i === 0 ? 'active' : '';
-        return `<div class="conv-item ${active}" data-id="${c.id}">
-            <div class="conv-item-title">Conversation</div>
-            <div class="conv-item-meta">${day}, ${time} · ${c.message_count || 0} msgs</div>
-        </div>`;
-    }).join('');
-}
-
-function filterConversations(q) {
-    // Simple filter - for now just show all since we don't have titles
-    renderConversations(conversations);
-}
-
-function isToday(d) {
-    const t = new Date();
-    return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
-}
-
-/* ---- Messages ---- */
-async function loadConversation() {
-    try {
-        const res = await fetch('/api/conversation/current');
-        const data = await res.json();
-        messagesEl.innerHTML = '';
-        if (data.messages && data.messages.length > 0) {
-            for (const msg of data.messages) addMessage(msg.role, msg.content);
-        }
-        updateHeader(data.conversation_id, data.messages ? data.messages.length : 0);
-    } catch(e) { console.error(e); }
-}
-
-function addMessage(role, content, debug) {
+/* ============ CHAT ============ */
+function addMessage(role, text, debug) {
     const div = document.createElement('div');
-    if (role === 'system-msg') {
-        div.className = 'msg system-msg';
-        div.textContent = content;
-    } else {
-        div.className = `msg ${role}`;
-        div.textContent = content;
-    }
-    messagesEl.appendChild(div);
-
-    // Add search pill and retrieval pills below assistant messages
+    div.className = 'msg ' + role;
+    div.textContent = text;
+    msgEl.appendChild(div);
     if (role === 'assistant' && debug) {
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'msg-meta';
-
-        if (debug.search && debug.search.fired) {
-            metaDiv.innerHTML += `<span class="search-pill">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                Tavily: "${debug.search.query}"</span>`;
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        if (debug.tools?.calls_made?.length) {
+            debug.tools.calls_made.forEach(tc => {
+                meta.innerHTML += `<span class="pill tool">${esc(tc.name)}</span>`;
+            });
         }
-
-        if (debug.chunks && debug.chunks.length > 0) {
-            metaDiv.innerHTML += `<span class="retrieval-pill">${debug.chunks.length} ${debug.chunks.length === 1 ? 'memory' : 'memories'}</span>`;
-        }
-
-        if (debug.retrieval_skipped) {
-            metaDiv.innerHTML += `<span class="retrieval-pill">retrieval skipped</span>`;
-        }
-
-        if (metaDiv.innerHTML) messagesEl.appendChild(metaDiv);
+        const chunkCount = debug.chunks?.length || 0;
+        meta.innerHTML += `<span class="pill">${chunkCount} ${chunkCount===1?'memory':'memories'}</span>`;
+        if (debug.retrieval_skipped) meta.innerHTML += `<span class="pill">retrieval skipped</span>`;
+        meta.innerHTML += `<span class="pill">${(debug.tokens_used||0).toLocaleString()} tokens</span>`;
+        msgEl.appendChild(meta);
     }
-
-    scrollToBottom();
+    scrollChat();
 }
+function scrollChat() { msgEl.scrollTop = msgEl.scrollHeight; }
+function showThinking() { const d=document.createElement('div'); d.className='thinking'; d.id='thinking'; d.textContent='Thinking'; msgEl.appendChild(d); scrollChat(); }
+function hideThinking() { document.getElementById('thinking')?.remove(); }
 
-function scrollToBottom() {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-function showThinking() {
-    const div = document.createElement('div');
-    div.className = 'thinking'; div.id = 'thinking';
-    div.textContent = 'Thinking';
-    messagesEl.appendChild(div);
-    scrollToBottom();
-}
-
-function hideThinking() {
-    const el = document.getElementById('thinking');
-    if (el) el.remove();
-}
-
-/* ---- Context panel ---- */
-function updateContext(debug) {
-    if (!debug) return;
-    lastDebug = debug;
-
-    const pct = Math.round((debug.tokens_used / debug.context_window) * 100);
-    const bd = debug.breakdown || {};
-
+function updateContext(d) {
+    if (!d) return;
+    lastDebug = d;
+    const pct = Math.round((d.tokens_used/d.context_window)*100);
+    const bd = d.breakdown||{};
     let chunksHtml = '';
-    if (debug.chunks && debug.chunks.length > 0) {
-        chunksHtml = debug.chunks.map((c, i) =>
-            `<div class="ctx-chunk">
-                <div class="ctx-chunk-header">
-                    <span class="ctx-chunk-idx">Chunk ${i}</span>
-                    <span class="ctx-chunk-dist">dist: ${c.distance}</span>
-                </div>
-                <div class="ctx-chunk-text">${escHtml(c.preview)}</div>
-            </div>`
-        ).join('');
-    } else if (debug.retrieval_skipped) {
-        chunksHtml = '<div class="ctx-empty">Retrieval skipped (trivial message)</div>';
-    } else {
-        chunksHtml = '<div class="ctx-empty">No memories retrieved</div>';
-    }
-
-    let searchHtml = '';
-    if (debug.search && debug.search.fired) {
-        searchHtml = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-                <div style="width:6px;height:6px;border-radius:50%;background:var(--green);"></div>
-                <span style="font-size:11px;color:var(--text-muted);">Tavily search fired</span>
-            </div>
-            <div class="ctx-search-query">"${escHtml(debug.search.query)}"</div>
-            <div style="font-size:10px;color:var(--text-ghost);margin-top:6px;">${debug.search.tokens} tokens</div>`;
-    } else {
-        searchHtml = '<div class="ctx-empty">No search this request</div>';
-    }
-
+    if (d.chunks?.length) {
+        chunksHtml = d.chunks.map((c,i) => `<div class="ctx-chunk"><div class="ctx-chunk-head"><span>Chunk ${i}</span><span>${c.distance}</span></div><div class="ctx-chunk-text">${esc(c.preview)}</div></div>`).join('');
+    } else if (d.retrieval_skipped) { chunksHtml = '<div class="ctx-empty">retrieval skipped</div>'; }
+    else { chunksHtml = '<div class="ctx-empty">no memories retrieved</div>'; }
+    let toolsHtml = '';
+    if (d.tools?.calls_made?.length) {
+        toolsHtml = d.tools.calls_made.map(tc => `<div class="ctx-tool"><div style="color:var(--accent);font-weight:500;margin-bottom:2px;">${esc(tc.name)}</div><div style="color:var(--text-faint);">${esc(JSON.stringify(tc.arguments).substring(0,100))}</div></div>`).join('');
+    } else { toolsHtml = '<div class="ctx-empty">no tool calls</div>'; }
     ctxContent.innerHTML = `
-        <div class="ctx-section">
-            <div class="ctx-label">Last request</div>
-            <div class="ctx-stat-grid">
-                <div class="ctx-stat-card">
-                    <div class="ctx-stat-val">${debug.tokens_used.toLocaleString()}</div>
-                    <div class="ctx-stat-label">Tokens used</div>
-                </div>
-                <div class="ctx-stat-card">
-                    <div class="ctx-stat-val">${debug.tokens_headroom.toLocaleString()}</div>
-                    <div class="ctx-stat-label">Headroom</div>
-                </div>
-            </div>
+        <div class="ctx-section"><div class="ctx-label">last request</div>
+            <div class="ctx-stat-row"><div class="ctx-stat"><div class="ctx-stat-val">${d.tokens_used.toLocaleString()}</div><div class="ctx-stat-lbl">tokens</div></div><div class="ctx-stat"><div class="ctx-stat-val">${d.tokens_headroom.toLocaleString()}</div><div class="ctx-stat-lbl">headroom</div></div></div>
             <div class="ctx-bar"><div class="ctx-bar-fill" style="width:${pct}%"></div></div>
-            <div class="ctx-bar-label">${debug.tokens_used.toLocaleString()} / ${debug.context_window.toLocaleString()} context window</div>
+            <div class="ctx-bar-lbl">${d.tokens_used.toLocaleString()} / ${d.context_window.toLocaleString()}</div>
         </div>
-        <div class="ctx-section">
-            <div class="ctx-label">Token breakdown</div>
-            <div class="ctx-row"><span class="ctx-row-name">SOUL.md</span><span class="ctx-row-val">${bd.soul||0}</span></div>
-            <div class="ctx-row"><span class="ctx-row-name">Chunks</span><span class="ctx-row-val">${bd.chunks||0}</span></div>
-            <div class="ctx-row"><span class="ctx-row-name">Summaries</span><span class="ctx-row-val">${bd.summaries||0}</span></div>
-            <div class="ctx-row"><span class="ctx-row-name">Skills</span><span class="ctx-row-val">${bd.skills||0}</span></div>
-            <div class="ctx-row"><span class="ctx-row-name">Search</span><span class="ctx-row-val">${bd.search||0}</span></div>
-            <div class="ctx-row"><span class="ctx-row-name">History</span><span class="ctx-row-val">${bd.history||0}</span></div>
+        <div class="ctx-section"><div class="ctx-label">breakdown</div>
+            <div class="ctx-row"><span>SOUL.md</span><span>${bd.soul||0}</span></div>
+            <div class="ctx-row"><span>chunks</span><span>${bd.chunks||0}</span></div>
+            <div class="ctx-row"><span>skills</span><span>${bd.skills||0}</span></div>
+            <div class="ctx-row"><span>history</span><span>${bd.history||0}</span></div>
         </div>
-        <div class="ctx-section">
-            <div class="ctx-label">Retrieved memories</div>
-            ${chunksHtml}
-        </div>
-        <div class="ctx-section" style="border-bottom:none;">
-            <div class="ctx-label">Search</div>
-            ${searchHtml}
-        </div>`;
-
-    // Mobile info strip
-    updateInfoStrip(debug);
+        <div class="ctx-section"><div class="ctx-label">memories</div>${chunksHtml}</div>
+        <div class="ctx-section"><div class="ctx-label">tools</div>${toolsHtml}</div>`;
 }
 
-function updateInfoStrip(debug) {
-    if (!debug) return;
-    let chips = [];
-    if (debug.chunks && debug.chunks.length > 0) {
-        chips.push(`${debug.chunks.length} ${debug.chunks.length===1?'memory':'memories'}`);
-    }
-    if (debug.retrieval_skipped) chips.push('retrieval skipped');
-    chips.push(`${debug.tokens_used.toLocaleString()} tokens`);
-    chips.push(`${debug.tokens_headroom.toLocaleString()} headroom`);
-    infoStrip.innerHTML = chips.map(c => `<span class="info-chip">${c}</span>`).join('');
-}
+async function uploadFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = ''; // reset for next upload
 
-function updateHeader(convId, msgCount) {
-    const meta = document.getElementById('headerMeta');
-    if (msgCount > 0) meta.textContent = `${msgCount} messages`;
-    else meta.textContent = '';
-}
+    addMessage('system-msg', `Uploading ${file.name}...`);
 
-/* ---- Send / receive ---- */
-async function sendMessage() {
-    const text = inputEl.value.trim();
-    if (!text || sending) return;
-
-    sending = true;
-    sendBtn.disabled = true;
-    inputEl.value = '';
-    inputEl.style.height = 'auto';
-
-    addMessage('user', text);
-    showThinking();
+    const formData = new FormData();
+    formData.append('file', file);
 
     try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch('/api/upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text }),
+            body: formData,
         });
-        hideThinking();
+        const data = await res.json();
 
         if (!res.ok) {
-            addMessage('system-msg', 'Error: could not get response');
+            addMessage('system-msg', `Upload failed: ${data.error || 'unknown error'}`);
             return;
         }
 
+        addMessage('system-msg', data.message);
+
+    } catch(e) {
+        addMessage('system-msg', 'Upload failed: connection error');
+        console.error(e);
+    }
+}
+
+async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || sending) return;
+    sending = true; sendBtn.disabled = true;
+    inputEl.value = ''; inputEl.style.height = 'auto';
+    addMessage('user', text);
+    showThinking();
+    try {
+        const res = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:text}) });
+        hideThinking();
+        if (!res.ok) { addMessage('system-msg','Error: could not get response'); return; }
         const data = await res.json();
         addMessage('assistant', data.response, data.debug);
         updateContext(data.debug);
-        updateHeader(data.conversation_id, null);
-
-    } catch(e) {
-        hideThinking();
-        addMessage('system-msg', 'Connection error');
-        console.error(e);
-    } finally {
-        sending = false;
-        sendBtn.disabled = false;
-        inputEl.focus();
-    }
+        document.getElementById('chatMeta').textContent = data.memories_used + ' memories';
+        // Cache debug for reload persistence
+        if (data.debug && data.conversation_id) {
+            _convId = data.conversation_id;
+            const idx = msgEl.querySelectorAll('.msg.assistant').length - 1;
+            _debugCache[idx] = data.debug;
+            try { localStorage.setItem('aion_debug_' + _convId, JSON.stringify(_debugCache)); } catch(e) {}
+        }
+    } catch(e) { hideThinking(); addMessage('system-msg','Connection error'); }
+    finally { sending = false; sendBtn.disabled = false; inputEl.focus(); }
 }
 
 async function newConversation() {
     try {
-        await fetch('/api/conversation/new', { method: 'POST' });
-        messagesEl.innerHTML = '';
-        addMessage('system-msg', 'New conversation started');
-        ctxContent.innerHTML = '<div class="ctx-section"><div class="ctx-empty">Send a message to see context data.</div></div>';
-        infoStrip.innerHTML = '';
-        loadConversations();
+        await fetch('/api/conversation/new',{method:'POST'});
+        msgEl.innerHTML='';
+        addMessage('system-msg','New conversation started');
+        ctxContent.innerHTML='<div class="ctx-empty">Send a message to see context data.</div>';
+        _debugCache = {};
+        if (_convId) try { localStorage.removeItem('aion_debug_' + _convId); } catch(e) {}
+        _convId = null;
         inputEl.focus();
-    } catch(e) { console.error(e); }
+    } catch(e) {}
 }
 
-function handleKey(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        sendMessage();
-    }
+function toggleContext() {
+    ctxVisible = !ctxVisible;
+    ctxPanel.classList.toggle('collapsed', !ctxVisible);
+    document.getElementById('toggleCtx').classList.toggle('active', ctxVisible);
+}
+function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+
+/* ============ DASHBOARD ============ */
+async function loadDashboard() {
+    const dc = document.getElementById('dashContent');
+    try {
+        const [healthRes, statsRes, searchRes, overnightRes] = await Promise.all([
+            fetch('/api/health').then(r=>r.json()).catch(()=>null),
+            fetch('/api/memory/stats').then(r=>r.json()).catch(()=>null),
+            fetch('/api/search/usage').then(r=>r.json()).catch(()=>null),
+            fetch('/api/overnight/runs?limit=1').then(r=>r.json()).catch(()=>null),
+        ]);
+        const h = healthRes || {};
+        const s = statsRes || {};
+        const sr = searchRes || {};
+        const lastRun = overnightRes?.runs?.[0];
+
+        // Dev banner
+        const devBannerDash = document.getElementById('devBannerDash');
+        if (h.dev_mode) devBannerDash.textContent = '⚠ dev mode — using data/dev/ — production data is not being modified';
+        else devBannerDash.textContent = '';
+        const devBanner = document.getElementById('devBanner');
+        if (h.dev_mode) devBanner.textContent = '⚠ dev mode — using data/dev/ — production data is not being modified';
+        else devBanner.textContent = '';
+
+        // Status dot
+        const dot = document.getElementById('statusDot');
+        dot.style.background = h.ollama?.status === 'ok' ? 'var(--green)' : 'var(--red)';
+
+        const fmtBytes = b => b > 1048576 ? (b/1048576).toFixed(1)+' MB' : (b/1024).toFixed(0)+' KB';
+
+        let html = '';
+        // Stat cards
+        html += `<div class="stat-grid">
+            <div class="stat-card"><div class="stat-card-val">${s.conversations||0}</div><div class="stat-card-lbl">conversations</div></div>
+            <div class="stat-card"><div class="stat-card-val">${s.total_chunks||0}</div><div class="stat-card-lbl">memory chunks</div></div>
+            <div class="stat-card"><div class="stat-card-val">${s.observations||0}</div><div class="stat-card-lbl">observations</div></div>
+            <div class="stat-card"><div class="stat-card-val">${sr.used||0}<span> / ${sr.limit||1000}</span></div><div class="stat-card-lbl">searches this month</div></div>
+        </div>`;
+
+        // Health + Storage grid
+        html += '<div class="grid-2">';
+        // Health card
+        const ollamaStatus = h.ollama?.status === 'ok' ? 'ok' : 'err';
+        const chromaStatus = h.chromadb?.status === 'ok' ? 'ok' : 'err';
+        const overnightStatus = h.overnight?.status === 'ok' ? 'ok' : h.overnight?.status === 'stale' ? 'warn' : h.overnight?.status === 'never_run' ? 'warn' : 'err';
+        const overnightDetail = h.overnight?.last_run ? fmtTime(h.overnight.last_run) : 'never';
+        html += `<div class="card"><div class="card-title">system health</div>
+            <div class="health-row"><div style="display:flex;align-items:center;"><div class="health-dot ${ollamaStatus}"></div><span class="health-name">Ollama</span></div><span class="health-detail">${h.ollama?.status==='ok'?'connected':'down'}</span></div>
+            <div class="health-row"><div style="display:flex;align-items:center;"><div class="health-dot ${chromaStatus}"></div><span class="health-name">ChromaDB</span></div><span class="health-detail">${h.chromadb?.chunks||0} chunks</span></div>
+            <div class="health-row"><div style="display:flex;align-items:center;"><div class="health-dot ${overnightStatus}"></div><span class="health-name">overnight cycle</span></div><span class="health-detail">${overnightDetail}</span></div>
+        </div>`;
+        // Storage card
+        const st = s.storage || {};
+        html += `<div class="card"><div class="card-title">storage</div>
+            <div class="storage-row"><span>archive.db</span><span>${fmtBytes(st.archive_db||0)}</span></div>
+            <div class="storage-row"><span>working.db</span><span>${fmtBytes(st.working_db||0)}</span></div>
+            <div class="storage-row"><span>ChromaDB</span><span>${fmtBytes(st.chromadb||0)}</span></div>
+        </div>`;
+        html += '</div>';
+
+        // Last overnight run
+        if (lastRun) {
+            const steps = ['research','journal','observer','consolidation'];
+            let stepsHtml = steps.map(step => {
+                const status = lastRun[step+'_status'] || 'skipped';
+                const summary = lastRun[step+'_summary'] || '';
+                const cls = status === 'success' ? 'ok' : status === 'failed' ? 'fail' : 'skip';
+                const icon = status === 'success' ? '&#10003;' : status === 'failed' ? '&#10007;' : '—';
+                return `<div class="step-row"><div class="step-icon ${cls}">${icon}</div><div><div class="step-name ${cls === 'fail' ? 'fail' : ''}">${step}${status==='failed'?' — failed':''}</div><div class="step-detail">${esc(summary)}</div></div></div>`;
+            }).join('');
+            html += `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div class="card-title" style="margin:0;">last overnight cycle</div><span style="font-size:12px;color:var(--text-faint);">${fmtTime(lastRun.started_at)} — ${lastRun.duration_seconds||'?'}s</span></div>${stepsHtml}</div>`;
+        }
+
+        dc.innerHTML = html;
+    } catch(e) { dc.innerHTML = '<div style="color:var(--red-text);padding:20px;">Failed to load dashboard: '+e.message+'</div>'; }
 }
 
-function autoResize(el) {
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+/* ============ ACTIVITY ============ */
+async function loadActivity() {
+    const list = document.getElementById('activityList');
+    list.innerHTML = '<div style="color:var(--text-faint);text-align:center;padding:40px;">Loading...</div>';
+    try {
+        const [journalsRes, researchRes, obsRes, runsRes] = await Promise.all([
+            fetch('/api/documents?source_type=journal').then(r=>r.json()).catch(()=>({documents:[]})),
+            fetch('/api/documents?source_type=research').then(r=>r.json()).catch(()=>({documents:[]})),
+            fetch('/api/observations').then(r=>r.json()).catch(()=>({observations:[]})),
+            fetch('/api/overnight/runs?limit=20').then(r=>r.json()).catch(()=>({runs:[]})),
+        ]);
+
+        window._activityData = {
+            journal: (journalsRes.documents||[]).map(d => ({...d, _type:'journal'})),
+            research: (researchRes.documents||[]).map(d => ({...d, _type:'research'})),
+            observation: (obsRes.observations||[]).map(o => ({...o, _type:'observation', created_at: o.started_at || o.created_at})),
+            overnight: (runsRes.runs||[]).map(r => ({...r, _type:'overnight'})),
+        };
+        renderActivity(currentActivityFilter);
+    } catch(e) { list.innerHTML = '<div style="color:var(--red-text);padding:20px;">Failed to load: '+e.message+'</div>'; }
 }
 
-function escHtml(s) {
-    if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function filterActivity(type) {
+    currentActivityFilter = type;
+    document.querySelectorAll('.activity-tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    renderActivity(type);
 }
 
-/* ---- Init ---- */
-restorePanels();
-loadConversation();
-loadConversations();
-inputEl.focus();
+function renderActivity(type) {
+    const list = document.getElementById('activityList');
+    const data = window._activityData || {};
+    let items = [];
+    if (type === 'all') { items = [...(data.journal||[]),...(data.research||[]),...(data.observation||[]),...(data.overnight||[])]; }
+    else { items = data[type] || []; }
+    items.sort((a,b) => (b.created_at||b.started_at||'').localeCompare(a.created_at||a.started_at||''));
+
+    if (!items.length) { list.innerHTML = '<div class="entry-empty">No entries yet.</div>'; return; }
+
+    list.innerHTML = items.map((item, i) => {
+        if (item._type === 'overnight') {
+            const steps = ['research','journal','observer','consolidation'];
+            const stepsSummary = steps.map(s => { const st = item[s+'_status']||'skipped'; return st==='success'?'&#10003;':st==='failed'?'&#10007;':'—'; }).join(' ');
+            return `<div class="entry" onclick="this.classList.toggle('expanded')">
+                <div class="entry-head"><span class="entry-date">${fmtTime(item.started_at)}</span><span class="entry-type observation">overnight ${item.duration_seconds||'?'}s</span></div>
+                <div class="entry-preview">${steps.map(s => s+': '+(item[s+'_status']||'skipped')).join(' · ')}</div>
+                <div class="entry-full">${steps.map(s => '<b>'+s+':</b> '+(item[s+'_summary']||'skipped')).join('\n')}</div>
+            </div>`;
+        }
+        const typeLabel = item._type;
+        const date = item.created_at || item.started_at || '';
+        const preview = item.summary || item.content || item.title || '';
+        const docId = item.id || '';
+        return `<div class="entry" onclick="toggleEntry(this,'${docId}','${typeLabel}')">
+            <div class="entry-head"><span class="entry-date">${fmtTime(date)}</span><span class="entry-type ${typeLabel}">${typeLabel}</span></div>
+            <div class="entry-preview">${esc(preview.substring(0,200))}</div>
+            <div class="entry-full" id="entry-${docId}">Loading...</div>
+        </div>`;
+    }).join('');
+}
+
+async function toggleEntry(el, docId, type) {
+    el.classList.toggle('expanded');
+    if (!el.classList.contains('expanded')) return;
+    const fullEl = el.querySelector('.entry-full');
+    if (fullEl.dataset.loaded) return;
+    try {
+        let content = '';
+        if (type === 'observation') {
+            const obs = (window._activityData?.observation||[]).find(o => o.id === docId);
+            content = obs?.content || 'No content';
+        } else {
+            const res = await fetch('/api/documents/'+docId+'/content');
+            const data = await res.json();
+            content = data.content || 'No content found';
+        }
+        fullEl.textContent = content;
+        fullEl.dataset.loaded = '1';
+    } catch(e) { fullEl.textContent = 'Failed to load content'; }
+}
+
+/* ============ SETTINGS ============ */
+async function loadSettings() {
+    const sc = document.getElementById('settingsContent');
+    try {
+        const [configRes, secretsRes, skillsRes] = await Promise.all([
+            fetch('/api/config').then(r=>r.json()).catch(()=>({config:{}})),
+            fetch('/api/secrets').then(r=>r.json()).catch(()=>({secrets:[]})),
+            fetch('/api/skills').then(r=>r.json()).catch(()=>({skills:[]})),
+        ]);
+        const config = configRes.config || {};
+        const secrets = secretsRes.secrets || [];
+        const skills = skillsRes.skills || [];
+
+        let html = '<div class="restart-notice" id="restartNotice">Config changed — restart the server for changes to take effect.</div>';
+
+        // Config
+        html += '<div class="settings-group"><div class="settings-group-title">configuration</div>';
+        for (const [key, meta] of Object.entries(config)) {
+            const modified = meta.modified ? '<span class="setting-modified">modified</span>' : '';
+            html += `<div class="setting-row">
+                <div><span class="setting-key">${key}</span>${modified}</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input class="setting-val" value="${esc(String(meta.value))}" data-key="${key}" data-original="${esc(String(meta.value))}" onchange="updateConfig(this)">
+                    ${meta.modified ? `<button class="btn-sm" onclick="resetConfig('${key}',this)" title="Reset to default: ${esc(String(meta.default))}">reset</button>` : ''}
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+
+        // Secrets
+        html += '<div class="settings-group"><div class="settings-group-title">secrets</div>';
+        if (secrets.length) {
+            secrets.forEach(key => {
+                html += `<div class="secret-row"><span class="secret-name">${esc(key)}</span><div style="display:flex;gap:6px;align-items:center;"><span class="secret-badge">set</span><button class="btn-sm danger" onclick="deleteSecret('${esc(key)}')">delete</button></div></div>`;
+            });
+        } else { html += '<div style="font-size:13px;color:var(--text-faint);padding:8px 0;">No secrets configured.</div>'; }
+        html += `<div style="display:flex;gap:6px;margin-top:8px;">
+            <input class="setting-val" id="newSecretKey" placeholder="Key" style="width:140px;text-align:left;">
+            <input class="setting-val" id="newSecretVal" placeholder="Value" style="flex:1;text-align:left;" type="password">
+            <button class="btn-sm primary" onclick="addSecret()">add</button>
+        </div></div>`;
+
+        // Skills
+        html += '<div class="settings-group"><div class="settings-group-title">skills</div>';
+        if (skills.length) {
+            skills.forEach(s => {
+                const ready = s.status?.ready;
+                html += `<div class="secret-row"><div><span class="secret-name">${esc(s.name)}</span><span style="font-size:11px;color:var(--text-faint);margin-left:8px;">v${s.version||'?'}</span></div><span class="secret-badge" style="${ready?'':'background:var(--red-bg);color:var(--red-text);'}">${ready?'ready':s.status?.summary||'not ready'}</span></div>`;
+            });
+        } else { html += '<div style="font-size:13px;color:var(--text-faint);padding:8px 0;">No skills installed.</div>'; }
+        html += '</div>';
+
+        sc.innerHTML = html;
+    } catch(e) { sc.innerHTML = '<div style="color:var(--red-text);padding:20px;">Failed to load settings: '+e.message+'</div>'; }
+}
+
+async function updateConfig(input) {
+    const key = input.dataset.key;
+    const value = input.value;
+    try {
+        const res = await fetch('/api/config/'+key, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value}) });
+        if (res.ok) { document.getElementById('restartNotice').style.display = 'block'; }
+    } catch(e) {}
+}
+async function resetConfig(key, btn) {
+    try {
+        await fetch('/api/config/'+key, { method:'DELETE' });
+        document.getElementById('restartNotice').style.display = 'block';
+        loadSettings();
+    } catch(e) {}
+}
+async function addSecret() {
+    const key = document.getElementById('newSecretKey').value.trim();
+    const value = document.getElementById('newSecretVal').value.trim();
+    if (!key || !value) return;
+    try {
+        await fetch('/api/secrets', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key,value}) });
+        loadSettings();
+    } catch(e) {}
+}
+async function deleteSecret(key) {
+    if (!confirm('Delete secret "'+key+'"?')) return;
+    try { await fetch('/api/secrets/'+key, { method:'DELETE' }); loadSettings(); } catch(e) {}
+}
+
+/* ============ HELPERS ============ */
+function esc(s) { if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtTime(iso) {
+    if (!iso) return '—';
+    try {
+        const d = new Date(iso);
+        const now = new Date();
+        const diff = now - d;
+        if (diff < 60000) return 'just now';
+        if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+        if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+        return d.toLocaleDateString('en-US', {month:'short', day:'numeric'}) + ' at ' + d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+    } catch(e) { return iso; }
+}
+
+/* ============ INIT ============ */
+async function init() {
+    // Load current conversation
+    try {
+        const res = await fetch('/api/conversation/current');
+        const data = await res.json();
+        if (data.messages?.length) {
+            _convId = data.conversation_id;
+            // Restore cached debug data
+            try { _debugCache = JSON.parse(localStorage.getItem('aion_debug_' + _convId) || '{}'); } catch(e) { _debugCache = {}; }
+            let assistantIdx = 0;
+            data.messages.forEach(m => {
+                const debug = m.role === 'assistant' ? _debugCache[assistantIdx++] || null : null;
+                addMessage(m.role, m.content, debug);
+            });
+            if (Object.keys(_debugCache).length) {
+                const lastIdx = Math.max(...Object.keys(_debugCache).map(Number));
+                updateContext(_debugCache[lastIdx]);
+            }
+        }
+    } catch(e) {}
+    // Check health for status dot and dev banner
+    try {
+        const h = await fetch('/api/health').then(r=>r.json());
+        document.getElementById('statusDot').style.background = h.ollama?.status === 'ok' ? 'var(--green)' : 'var(--red)';
+        if (h.dev_mode) document.getElementById('devBanner').textContent = '⚠ dev mode — using data/dev/ — production data is not being modified';
+    } catch(e) {}
+    // Restore context panel state
+    const saved = localStorage.getItem('aion_ctx_visible');
+    if (saved === 'false') { ctxVisible = false; ctxPanel.classList.add('collapsed'); }
+    inputEl.focus();
+}
+// Save ctx panel state
+const origToggle = toggleContext;
+toggleContext = function() { origToggle(); localStorage.setItem('aion_ctx_visible', ctxVisible); };
+
+init();
 </script>
-
 </body>
 </html>

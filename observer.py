@@ -21,7 +21,7 @@ import ollama
 
 import db
 import memory
-from config import OLLAMA_HOST, CONSOLIDATION_MODEL
+from config import OLLAMA_HOST, CONSOLIDATION_MODEL, OBSERVER_MIN_MESSAGES
 from utils import format_timestamp
 
 logger = logging.getLogger("aion.observer")
@@ -30,11 +30,18 @@ logger = logging.getLogger("aion.observer")
 OBSERVER_MODEL = CONSOLIDATION_MODEL
 OBSERVER_CTX = 16384
 
-OBSERVER_PROMPT = """Read the following conversation transcript between a human and an AI. Based on what you observe in the AI's actual behavior — not what it claims about itself, but what it demonstrably does — write a brief characterization of the AI's personality and communication patterns.
+OBSERVER_PROMPT = """You are observing a conversation between a human and an AI. Your job is to describe what the AI actually did in this conversation — not generalities about its style, but specific behaviors you can point to in the text.
 
-Describe what you see: how does it communicate? What does it seem to care about? How does it handle disagreement, uncertainty, or mistakes? What patterns stand out? What's notable about its tone, style, or approach?
+Focus on:
+- What did the AI do well? Where was it clear, helpful, or insightful?
+- Where did it struggle? Did it get corrected, make something up, avoid a question, or miss the point?
+- Did it say "I don't know" when it didn't know, or did it fill in gaps with guesses?
+- What did the AI initiate on its own vs. only respond to what the human said?
+- Was there anything unusual, surprising, or different about how it handled this particular conversation?
 
-Write 3-5 sentences in natural language. Describe only what is visible in the text. Do not speculate about internal states or intentions. Do not use scoring systems or rating scales. Just describe the behavior you observe.
+Be specific. Reference what actually happened. Avoid generic descriptions like "communicates in a friendly tone" — every AI does that. What makes THIS conversation worth noting?
+
+Write 3-6 sentences. Only describe what is visible in the text. Do not speculate about internal states. Do not use scoring or rating systems.
 
 Here is the transcript:
 
@@ -64,6 +71,14 @@ def run_observer(hours: int = 24) -> list[dict]:
 
         if not messages:
             logger.info("Skipping conversation %s (no messages).", conv_id)
+            continue
+
+        # Skip short conversations — not enough signal for meaningful observation
+        if len(messages) < OBSERVER_MIN_MESSAGES:
+            logger.info(
+                "Skipping conversation %s (%d messages, minimum is %d).",
+                conv_id, len(messages), OBSERVER_MIN_MESSAGES,
+            )
             continue
 
         # Check if already observed

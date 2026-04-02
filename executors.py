@@ -344,13 +344,13 @@ def init_executors():
     register(
         "store_document",
         _store_document,
-        "Store a document in your memory system. Use when you learn something worth remembering from research, articles, or interactions.",
+        "Store a document in your memory system. Use for journal entries, reflections, research notes, or anything worth remembering.",
         {
             "type": "object",
             "properties": {
                 "doc_type": {
                     "type": "string",
-                    "description": "Document type: research, article, diagnostic, moltbook, observation",
+                    "description": "Document type: journal, research, article, diagnostic, moltbook, observation",
                 },
                 "title": {
                     "type": "string",

@@ -22,6 +22,7 @@ from config import (
     EMBED_MODEL,
     LIVE_CHUNK_INTERVAL,
     RETRIEVAL_RESULTS,
+    RETRIEVAL_MAX_DISTANCE,
 )
 from utils import format_timestamp
 
@@ -172,6 +173,12 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
             # Hard cut
             break_point = end
 
+        # If the break point would produce a chunk smaller than or equal to overlap,
+        # use hard cut instead — prevents tiny chunks from code files
+        # with lots of short lines, and guarantees forward progress
+        if break_point - start <= overlap:
+            break_point = end
+
         chunks.append(text[start:break_point])
         start = break_point - overlap
         if start < 0:
@@ -293,10 +300,14 @@ def search(query: str, n_results: int = RETRIEVAL_RESULTS,
     # Sort by weighted distance (lower = better)
     memories.sort(key=lambda m: m["weighted_distance"] if m["weighted_distance"] is not None else float("inf"))
 
-    # Deduplicate — max one chunk per conversation
+    # Filter by distance threshold and deduplicate — max one chunk per conversation
     seen_conversations = set()
     deduplicated = []
     for mem in memories:
+        # Stop if beyond relevance threshold
+        if mem["weighted_distance"] is not None and mem["weighted_distance"] > RETRIEVAL_MAX_DISTANCE:
+            break  # Sorted by distance, so everything after is worse
+
         conv_id = mem["conversation_id"]
         if conv_id not in seen_conversations:
             seen_conversations.add(conv_id)

@@ -19,7 +19,7 @@ from config import ARCHIVE_DB, WORKING_DB, DATA_DIR
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     """Open a connection with row factory for dict-like access."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=5)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -102,6 +102,23 @@ def init_databases():
                 created_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS overnight_runs (
+                id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                duration_seconds REAL,
+                conversations_closed INTEGER DEFAULT 0,
+                research_status TEXT DEFAULT 'skipped',
+                research_summary TEXT,
+                journal_status TEXT DEFAULT 'skipped',
+                journal_summary TEXT,
+                observer_status TEXT DEFAULT 'skipped',
+                observer_summary TEXT,
+                consolidation_status TEXT DEFAULT 'skipped',
+                consolidation_summary TEXT
+            )
+        """)
         # Migration: add consolidated column if upgrading from Phase 1
         _migrate_working_db(conn)
 
@@ -152,6 +169,16 @@ def get_active_conversations() -> list[dict]:
             "SELECT * FROM conversations WHERE ended_at IS NULL"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def is_conversation_ended(conversation_id: str) -> bool:
+    """Check if a conversation has been ended (by overnight or other process)."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT ended_at FROM conversations WHERE id = ?",
+            (conversation_id,),
+        ).fetchone()
+    return row is not None and row["ended_at"] is not None
 
 
 def save_message(conversation_id: str, role: str, content: str) -> dict:
@@ -435,3 +462,42 @@ def get_documents_since(hours: int = 24) -> list[dict]:
             (cutoff,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def save_overnight_run(run_data: dict):
+    """Save an overnight run record."""
+    with _connect(WORKING_DB) as conn:
+        conn.execute(
+            "INSERT INTO overnight_runs "
+            "(id, started_at, ended_at, duration_seconds, conversations_closed, "
+            "research_status, research_summary, journal_status, journal_summary, "
+            "observer_status, observer_summary, consolidation_status, consolidation_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_data["id"], run_data["started_at"], run_data.get("ended_at"),
+                run_data.get("duration_seconds"), run_data.get("conversations_closed", 0),
+                run_data.get("research_status", "skipped"), run_data.get("research_summary"),
+                run_data.get("journal_status", "skipped"), run_data.get("journal_summary"),
+                run_data.get("observer_status", "skipped"), run_data.get("observer_summary"),
+                run_data.get("consolidation_status", "skipped"), run_data.get("consolidation_summary"),
+            ),
+        )
+
+
+def get_overnight_runs(limit: int = 10) -> list[dict]:
+    """Get recent overnight runs, newest first."""
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM overnight_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_latest_overnight_run() -> dict | None:
+    """Get the most recent overnight run."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT * FROM overnight_runs ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None

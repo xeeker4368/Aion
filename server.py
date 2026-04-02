@@ -26,10 +26,10 @@ import logging
 import re as _re
 import uuid as _uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -120,10 +120,11 @@ async def lifespan(app: FastAPI):
                 chunk_messages = messages[-remaining:]
                 chunk_index = memory.remainder_chunk_index(conv_msg_count)
                 memory.create_live_chunk(conv["id"], chunk_messages, chunk_index)
-                db.mark_conversation_chunked(conv["id"])
                 logger.info(
                     f"Startup: chunked {remaining} remaining messages for {conv['id']}"
                 )
+        # Always mark as chunked — live chunks may have been created during the conversation
+        db.mark_conversation_chunked(conv["id"])
 
     # Check for conversations that need consolidation
     global _active_conversation_id
@@ -204,12 +205,13 @@ def _end_active_conversation():
             chunk_index = memory.remainder_chunk_index(msg_count)
 
             memory.create_live_chunk(conv_id, chunk_messages, chunk_index)
-            db.mark_conversation_chunked(conv_id)
             logger.info(
                 f"Final chunk {chunk_index} created for conversation {conv_id} "
                 f"({remaining} remaining messages)"
             )
 
+        # Always mark as chunked — live chunks were created during the conversation
+        db.mark_conversation_chunked(conv_id)
         db.end_conversation(conv_id)
         logger.info(f"Conversation {conv_id} ended ({msg_count} messages)")
     else:
@@ -222,6 +224,15 @@ def _end_active_conversation():
 def _ensure_active_conversation() -> str:
     """Make sure there's an active conversation. Start one if needed."""
     global _active_conversation_id
+
+    if _active_conversation_id is not None:
+        # Check if overnight (or anything else) ended this conversation
+        if db.is_conversation_ended(_active_conversation_id):
+            logger.info(
+                f"Conversation {_active_conversation_id} was ended externally "
+                f"(overnight cycle). Chunking stragglers and starting fresh."
+            )
+            _end_active_conversation()
 
     if _active_conversation_id is None:
         _active_conversation_id = db.start_conversation()
@@ -340,6 +351,11 @@ def _has_tool_intent(response_text: str) -> bool:
         "search the web", "check the web",
         "use the api", "call the api", "check the api",
         "making a request", "making an http",
+        # Journal / reflection intent
+        "write a journal", "journal entry", "write in my journal",
+        "write a reflection", "reflect on this", "want to reflect",
+        "note this in my journal", "add to my journal",
+        "store_document",
     ]
 
     if any(signal in text for signal in tool_signals):
@@ -475,7 +491,6 @@ async def handle_chat(request: ChatRequest):
     else:
         retrieved_chunks = memory.search(
             query=request.message,
-            exclude_conversation_id=conversation_id,
         )
         logger.info(f"Retrieved {len(retrieved_chunks)} chunks")
         for i, chunk in enumerate(retrieved_chunks):
@@ -662,10 +677,6 @@ async def list_conversations():
 # Settings endpoints (secrets management)
 # ============================================================
 
-@app.get("/settings")
-async def serve_settings():
-    """Serve the settings page."""
-    return FileResponse(str(STATIC_DIR / "settings.html"))
 
 
 @app.get("/api/secrets")
@@ -732,6 +743,309 @@ async def search_usage():
 async def list_all_executors():
     """List available executors."""
     return {"executors": executors.list_executors()}
+
+
+# ============================================================
+# File upload
+# ============================================================
+
+@app.post("/api/upload")
+def upload_file(
+    file: UploadFile = File(...),
+    message: str = Form(default=""),
+):
+    """
+    Upload a file to the entity's memory.
+    Extracts text, chunks into ChromaDB, records in DB2.
+    Returns a confirmation that can be injected into the next chat message.
+    """
+    filename = file.filename or "unknown"
+    content_bytes = file.file.read()
+
+    # Extract text based on file type
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    text_extensions = {
+        "txt", "md", "py", "js", "json", "yaml", "yml",
+        "csv", "html", "css", "sh", "sql", "toml", "cfg",
+        "log", "xml", "ini",
+    }
+
+    if ext in text_extensions:
+        try:
+            text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = content_bytes.decode("latin-1")
+            except Exception:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Could not decode {filename} as text."},
+                )
+    elif ext == "pdf":
+        try:
+            import pdfplumber
+            import io
+            pdf = pdfplumber.open(io.BytesIO(content_bytes))
+            pages = []
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    pages.append(page_text)
+            pdf.close()
+            text = "\n\n".join(pages)
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Failed to extract PDF text: {str(e)[:200]}"},
+            )
+    else:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Unsupported file type: .{ext}"},
+        )
+
+    if len(text.strip()) < 10:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"File {filename} had very little readable content."},
+        )
+
+    # Determine source trust — source code is firsthand, everything else secondhand
+    source_type = "article"
+    source_trust = "secondhand"
+    if ext == "py":
+        source_type = "source_code"
+        source_trust = "firsthand"
+
+    # Use filename as title
+    title = filename
+
+    # Chunk and store — same path as URL ingestion
+    doc_id = str(_uuid.uuid4())
+
+    chunk_count = memory.ingest_document(
+        doc_id=doc_id,
+        text=text,
+        title=title,
+        source_type=source_type,
+        source_trust=source_trust,
+    )
+
+    db.save_document(
+        doc_id=doc_id,
+        title=title,
+        source_type=source_type,
+        source_trust=source_trust,
+        chunk_count=chunk_count,
+    )
+
+    logger.info(
+        f"Uploaded {filename}: {len(text)} chars, {chunk_count} chunks, doc_id={doc_id}"
+    )
+
+    return {
+        "status": "uploaded",
+        "filename": filename,
+        "chars": len(text),
+        "chunks": chunk_count,
+        "doc_id": doc_id,
+        "message": f"File {filename} uploaded and saved to memory. {len(text)} characters, {chunk_count} sections.",
+    }
+
+
+# ============================================================
+# System & monitoring endpoints
+# ============================================================
+
+@app.get("/api/health")
+async def health_check():
+    """System health check — Ollama, ChromaDB, overnight status, dev mode."""
+    health = {"dev_mode": DEV_MODE}
+
+    # Ollama
+    try:
+        import requests
+        resp = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=5)
+        models = [m["name"] for m in resp.json().get("models", [])]
+        health["ollama"] = {"status": "ok", "models": models}
+    except Exception as e:
+        health["ollama"] = {"status": "down", "error": str(e)[:100]}
+
+    # ChromaDB
+    try:
+        count = memory._get_collection().count()
+        health["chromadb"] = {"status": "ok", "chunks": count}
+    except Exception as e:
+        health["chromadb"] = {"status": "down", "error": str(e)[:100]}
+
+    # Overnight
+    latest_run = db.get_latest_overnight_run()
+    if latest_run:
+        health["overnight"] = {
+            "last_run": latest_run["started_at"],
+            "duration": latest_run.get("duration_seconds"),
+            "status": "ok",
+        }
+        # Flag if last run was more than 26 hours ago
+        try:
+            last = datetime.fromisoformat(latest_run["started_at"])
+            if datetime.now(timezone.utc) - last > timedelta(hours=26):
+                health["overnight"]["status"] = "stale"
+        except Exception:
+            pass
+    else:
+        health["overnight"] = {"status": "never_run"}
+
+    return health
+
+
+@app.get("/api/memory/stats")
+async def memory_stats():
+    """Memory system statistics."""
+    collection = memory._get_collection()
+
+    # Total chunks
+    total = collection.count()
+
+    # Chunks by type
+    type_counts = {}
+    for source_type in ["conversation", "research", "journal", "observation", "article"]:
+        try:
+            results = collection.get(where={"source_type": source_type}, include=[])
+            type_counts[source_type] = len(results["ids"])
+        except Exception:
+            type_counts[source_type] = 0
+
+    # Conversations and documents from DB2
+    with db._connect(db.WORKING_DB) as conn:
+        conv_count = conn.execute(
+            "SELECT COUNT(*) FROM conversations WHERE ended_at IS NOT NULL"
+        ).fetchone()[0]
+        doc_count = conn.execute(
+            "SELECT COUNT(*) FROM documents"
+        ).fetchone()[0]
+        obs_count = conn.execute(
+            "SELECT COUNT(*) FROM observations"
+        ).fetchone()[0]
+
+    # Storage sizes
+    import os
+    storage = {}
+    for name, path in [("archive_db", config.ARCHIVE_DB), ("working_db", config.WORKING_DB)]:
+        try:
+            storage[name] = os.path.getsize(str(path))
+        except OSError:
+            storage[name] = 0
+
+    chroma_path = Path(config.CHROMA_DIR)
+    if chroma_path.exists():
+        storage["chromadb"] = sum(f.stat().st_size for f in chroma_path.rglob("*") if f.is_file())
+    else:
+        storage["chromadb"] = 0
+
+    return {
+        "total_chunks": total,
+        "chunks_by_type": type_counts,
+        "conversations": conv_count,
+        "documents": doc_count,
+        "observations": obs_count,
+        "storage": storage,
+    }
+
+
+@app.get("/api/documents")
+async def list_documents(source_type: str = None):
+    """List documents, optionally filtered by type."""
+    with db._connect(db.WORKING_DB) as conn:
+        if source_type:
+            rows = conn.execute(
+                "SELECT * FROM documents WHERE source_type = ? ORDER BY created_at DESC",
+                (source_type,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM documents ORDER BY created_at DESC"
+            ).fetchall()
+    return {"documents": [dict(row) for row in rows]}
+
+
+@app.get("/api/documents/{doc_id}/content")
+async def get_document_content(doc_id: str):
+    """Get full document content from ChromaDB chunks."""
+    collection = memory._get_collection()
+    try:
+        results = collection.get(
+            where={"conversation_id": doc_id},
+            include=["documents", "metadatas"],
+        )
+    except Exception:
+        return {"content": "", "chunks": 0}
+
+    if not results or not results["documents"]:
+        return {"content": "", "chunks": 0}
+
+    # Sort by chunk_index and concatenate
+    chunks = list(zip(results["documents"], results["metadatas"]))
+    chunks.sort(key=lambda x: x[1].get("chunk_index", 0))
+    content = "\n\n".join(doc for doc, _ in chunks)
+    return {"content": content, "chunks": len(chunks)}
+
+
+@app.get("/api/observations")
+async def list_observations():
+    """List all personality observations."""
+    observations = db.get_all_observations()
+    return {"observations": observations}
+
+
+@app.get("/api/overnight/runs")
+async def list_overnight_runs(limit: int = 10):
+    """Get recent overnight run history."""
+    runs = db.get_overnight_runs(limit)
+    return {"runs": runs}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Get all editable configuration."""
+    import config_manager
+    return {"config": config_manager.get_all()}
+
+
+@app.put("/api/config/{key}")
+async def update_config(key: str, request: dict):
+    """Update a config value. Requires server restart to take effect."""
+    import config_manager
+    value = request.get("value")
+    if value is None:
+        return JSONResponse(status_code=400, content={"error": "Missing 'value'"})
+
+    if config_manager.update(key, value):
+        return {"status": "updated", "key": key, "value": value, "restart_required": True}
+    return JSONResponse(status_code=400, content={"error": f"Invalid key or value: {key}"})
+
+
+@app.delete("/api/config/{key}")
+async def reset_config(key: str):
+    """Reset a config value to default."""
+    import config_manager
+    if config_manager.reset(key):
+        return {"status": "reset", "key": key, "restart_required": True}
+    return JSONResponse(status_code=404, content={"error": f"Key not found or already default: {key}"})
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: str):
+    """Get a conversation with its messages and summary."""
+    messages = db.get_conversation_messages(conversation_id)
+    summary = db.get_summary(conversation_id)
+
+    return {
+        "conversation_id": conversation_id,
+        "messages": [dict(m) for m in messages],
+        "summary": summary,
+    }
 
 
 if __name__ == "__main__":
