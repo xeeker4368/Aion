@@ -24,6 +24,7 @@ Message lifecycle:
 
 import logging
 import re as _re
+import threading
 import uuid as _uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -43,8 +44,14 @@ import skills
 import debug
 import search_limiter
 
-from config import LIVE_CHUNK_INTERVAL, CONTEXT_WINDOW, DEV_MODE
+from config import LIVE_CHUNK_INTERVAL, CONTEXT_WINDOW, DEV_MODE, DRAFT_REVIEW_REVISE_ENABLED
 import config
+
+from research import run_research
+from journal import run_journal
+from observer import run_observer
+from pattern_recognition import run_pattern_recognition
+from consolidation import consolidate_pending
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aion")
@@ -65,9 +72,9 @@ async def lifespan(app: FastAPI):
         import sqlite3
 
         dev_dir = Path(config.DATA_DIR) / "dev"
-        prod_archive = Path(config.DATA_DIR) / "archive.db"
-        prod_working = Path(config.DATA_DIR) / "working.db"
-        prod_chroma = Path(config.DATA_DIR) / "chromadb"
+        prod_archive = Path(config.DATA_DIR) / "prod" / "archive.db"
+        prod_working = Path(config.DATA_DIR) / "prod" / "working.db"
+        prod_chroma = Path(config.DATA_DIR) / "prod" / "chromadb"
 
         dev_dir.mkdir(parents=True, exist_ok=True)
 
@@ -142,6 +149,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Aion ready. (DEV MODE)")
     else:
         logger.info("Aion ready.")
+
+    # Start the overnight scheduler
+    overnight_thread = threading.Thread(target=_overnight_scheduler, daemon=True)
+    overnight_thread.start()
+    logger.info("Overnight scheduler started.")
+
     yield
     logger.info("Aion shutting down.")
 
@@ -170,6 +183,8 @@ class ChatResponse(BaseModel):
     memories_used: int
     tools_used: list[str] = []
     debug: dict = {}
+    draft: str | None = None
+    review: str | None = None
 
 
 class SecretRequest(BaseModel):
@@ -252,6 +267,184 @@ def _maybe_create_live_chunk(conversation_id: str, message_count: int):
         logger.info(
             f"Live chunk {chunk_index} created for conversation {conversation_id}"
         )
+
+
+_overnight_running = False
+
+def _run_overnight_cycle():
+    """
+    Run the full overnight cycle inside the server process.
+
+    The server owns the conversation lifecycle — it closes its own active
+    conversation, clears its in-memory state, then runs all overnight steps.
+    No external process touches conversation state.
+    """
+    global _overnight_running
+
+    if _overnight_running:
+        logger.warning("Overnight cycle already running. Skipping.")
+        return None
+
+    _overnight_running = True
+    start = datetime.now(timezone.utc)
+    run_id = str(_uuid.uuid4())
+
+    logger.info("=" * 60)
+    logger.info("OVERNIGHT CYCLE STARTING (server-internal)")
+    logger.info("=" * 60)
+
+    run_data = {
+        "id": run_id,
+        "started_at": start.isoformat(),
+    }
+
+    # Step 0: Close the active conversation using the server's own method
+    logger.info("--- Step 0: Close Active Conversation ---")
+    try:
+        if _active_conversation_id:
+            _end_active_conversation()
+            run_data["conversations_closed"] = 1
+            logger.info("Closed active conversation.")
+        else:
+            run_data["conversations_closed"] = 0
+            logger.info("No active conversation.")
+    except Exception as e:
+        logger.error(f"Failed to close conversation: {e}")
+        run_data["conversations_closed"] = 0
+
+    # Step 1: Autonomous Research
+    logger.info("--- Step 1: Research ---")
+    try:
+        result = run_research()
+        if result:
+            run_data["research_status"] = "skipped" if result.get("skipped") else "success"
+            run_data["research_summary"] = (
+                f"{result['tool_calls']} tool calls, {result['stored_chars']} chars stored"
+            )
+        else:
+            run_data["research_status"] = "skipped"
+            run_data["research_summary"] = "Nothing to explore"
+    except Exception as e:
+        logger.error(f"Research failed: {e}")
+        run_data["research_status"] = "failed"
+        run_data["research_summary"] = str(e)[:200]
+
+    # Step 2: Personality Observer
+    logger.info("--- Step 2: Personality Observer ---")
+    try:
+        results = run_observer()
+        if results:
+            run_data["observer_status"] = "success"
+            run_data["observer_summary"] = f"{len(results)} conversations characterized"
+        else:
+            run_data["observer_status"] = "skipped"
+            run_data["observer_summary"] = "Nothing to observe"
+    except Exception as e:
+        logger.error(f"Observer failed: {e}")
+        run_data["observer_status"] = "failed"
+        run_data["observer_summary"] = str(e)[:200]
+
+    # Step 3: Self-Knowledge (Pattern Recognition)
+    logger.info("--- Step 3: Self-Knowledge ---")
+    try:
+        result = run_pattern_recognition()
+        if result:
+            run_data["self_knowledge_status"] = "success"
+            run_data["self_knowledge_summary"] = (
+                f"Narrative updated ({result['observation_count']} observations, "
+                f"{result['journal_count']} journals)"
+            )
+        else:
+            run_data["self_knowledge_status"] = "skipped"
+            run_data["self_knowledge_summary"] = "Not enough data"
+    except Exception as e:
+        logger.error(f"Self-knowledge failed: {e}")
+        run_data["self_knowledge_status"] = "failed"
+        run_data["self_knowledge_summary"] = str(e)[:200]
+
+    # Step 4: Journal
+    logger.info("--- Step 4: Journal ---")
+    try:
+        result = run_journal()
+        if result:
+            run_data["journal_status"] = "success"
+            total_chars = sum(e["experience_chars"] for e in result)
+            run_data["journal_summary"] = (
+                f"{len(result)} entries, {total_chars} chars of experiences"
+            )
+            logger.info(f"Journal: {run_data['journal_summary']}")
+        else:
+            run_data["journal_status"] = "skipped"
+            run_data["journal_summary"] = "Nothing to reflect on"
+            logger.info("Journal: nothing to reflect on.")
+    except Exception as e:
+        logger.error(f"Journal failed: {e}")
+        run_data["journal_status"] = "failed"
+        run_data["journal_summary"] = str(e)[:200]
+
+    # Step 5: Consolidation
+    logger.info("--- Step 5: Consolidation ---")
+    try:
+        pending = db.get_unconsolidated_conversations()
+        consolidate_pending()
+        count = len(pending) if pending else 0
+        run_data["consolidation_status"] = "success" if count > 0 else "skipped"
+        run_data["consolidation_summary"] = (
+            f"{count} conversations summarized" if count > 0 else "Nothing pending"
+        )
+    except Exception as e:
+        logger.error(f"Consolidation failed: {e}")
+        run_data["consolidation_status"] = "failed"
+        run_data["consolidation_summary"] = str(e)[:200]
+
+    elapsed = (datetime.now(timezone.utc) - start).total_seconds()
+    run_data["ended_at"] = datetime.now(timezone.utc).isoformat()
+    run_data["duration_seconds"] = round(elapsed, 1)
+
+    try:
+        db.save_overnight_run(run_data)
+    except Exception as e:
+        logger.error(f"Failed to save run record: {e}")
+
+    logger.info("=" * 60)
+    logger.info(f"OVERNIGHT CYCLE COMPLETE ({elapsed:.1f}s)")
+    logger.info("=" * 60)
+
+    _overnight_running = False
+    return run_data
+
+
+def _overnight_scheduler():
+    """
+    Background thread that triggers the overnight cycle at the configured hour.
+    Runs as a daemon thread — dies when the server stops.
+    """
+    from config import OVERNIGHT_HOUR
+
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=OVERNIGHT_HOUR, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+
+        wait_seconds = (target - now).total_seconds()
+        logger.info(
+            f"Overnight scheduler: next run at {target.strftime('%I:%M %p')} "
+            f"({wait_seconds / 3600:.1f} hours from now)"
+        )
+
+        # Sleep in 60-second intervals so the thread can be interrupted
+        while wait_seconds > 0:
+            sleep_time = min(60, wait_seconds)
+            import time
+            time.sleep(sleep_time)
+            wait_seconds -= sleep_time
+
+        logger.info("Overnight scheduler: triggering cycle.")
+        try:
+            _run_overnight_cycle()
+        except Exception as e:
+            logger.error(f"Overnight scheduler: cycle failed: {e}")
 
 
 def _is_trivial_message(message: str) -> bool:
@@ -434,6 +627,7 @@ def _ingest_url(url: str) -> str:
         source_type="article",
         source_trust="thirdhand",
         chunk_count=chunk_count,
+        content=content,
     )
 
     logger.info(
@@ -552,7 +746,7 @@ async def handle_chat(request: ChatRequest):
     }
     debug.log_request(request_data)
 
-    # 9. Two-pass tool calling
+    # 9. Two-pass tool calling + optional draft/review/revise loop
     # Pass 1: No tool definitions — entity responds naturally
     # If it needs tools, it says so. If it doesn't, we're done.
     response_text, tool_calls_made = chat.send_message(
@@ -561,6 +755,13 @@ async def handle_chat(request: ChatRequest):
     )
 
     # Pass 2: If entity expressed tool intent, re-call with tools enabled
+    # Tool-using responses skip the review loop — the tool results
+    # define the response and reviewing the intent-signaling draft
+    # would not be useful.
+    used_review_loop = False
+    draft_for_storage = None
+    critique_for_storage = None
+
     if not _is_trivial_message(request.message) and _has_tool_intent(response_text):
         logger.info("Tool intent detected in response. Re-calling with tools.")
         tool_definitions = executors.get_tool_definitions()
@@ -570,6 +771,23 @@ async def handle_chat(request: ChatRequest):
             tool_definitions=tool_definitions,
             tool_executor=_execute_tool_call,
         )
+    elif (
+        DRAFT_REVIEW_REVISE_ENABLED
+        and not _is_trivial_message(request.message)
+    ):
+        # Run the review loop on the Pass 1 response. The Pass 1 response
+        # becomes the draft; draft_review_revise re-generates internally
+        # so we get a fresh draft, review, and revision in one call.
+        logger.info("Running draft/review/revise loop.")
+        revision, draft_for_storage, critique_for_storage = chat.draft_review_revise(
+            system_prompt,
+            trimmed_messages,
+        )
+        if revision:
+            response_text = revision
+            used_review_loop = True
+        else:
+            logger.warning("Review loop returned empty; keeping Pass 1 response.")
 
     # 11. Log response and tool usage
     response_tokens = debug.estimate_tokens(response_text)
@@ -588,8 +806,27 @@ async def handle_chat(request: ChatRequest):
             logger.info(f"Tool used: {tc['name']}({tc['arguments']}) -> {tc['result'][:100]}")
 
     # 12. Save response
-    db.save_message(conversation_id, "assistant", response_text)
+    saved_message = db.save_message(conversation_id, "assistant", response_text)
     msg_count = db.get_conversation_message_count(conversation_id)
+
+    # 12b. If the review loop ran, persist the draft + review and index
+    # the review into ChromaDB as retrievable substrate.
+    if used_review_loop and draft_for_storage and critique_for_storage:
+        try:
+            db.save_self_review(
+                message_id=saved_message["id"],
+                conversation_id=conversation_id,
+                draft=draft_for_storage,
+                review=critique_for_storage,
+            )
+            memory.create_self_review_chunk(
+                message_id=saved_message["id"],
+                conversation_id=conversation_id,
+                review_text=critique_for_storage,
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist self_review: {e}")
+            # Non-fatal — the revision was already sent and saved
 
     # 13. Live chunk check
     _maybe_create_live_chunk(conversation_id, msg_count)
@@ -615,7 +852,7 @@ async def handle_chat(request: ChatRequest):
         "chunks": [
             {
                 "preview": c.get("text", "")[:120],
-                "distance": round(c.get("distance", 0), 4),
+                "distance": round(c.get("distance") or 0, 4),
                 "conversation_id": c.get("conversation_id", ""),
             }
             for c in retrieved_chunks
@@ -640,6 +877,8 @@ async def handle_chat(request: ChatRequest):
         memories_used=len(retrieved_chunks),
         tools_used=[tc["name"] for tc in tool_calls_made],
         debug=frontend_debug,
+        draft=draft_for_storage if used_review_loop else None,
+        review=critique_for_storage if used_review_loop else None,
     )
 
 
@@ -838,6 +1077,7 @@ def upload_file(
         source_type=source_type,
         source_trust=source_trust,
         chunk_count=chunk_count,
+        content=text,
     )
 
     logger.info(
@@ -1004,6 +1244,18 @@ async def list_overnight_runs(limit: int = 10):
     """Get recent overnight run history."""
     runs = db.get_overnight_runs(limit)
     return {"runs": runs}
+
+
+@app.post("/api/overnight")
+async def trigger_overnight():
+    """Manually trigger the overnight cycle. Replaces 'python overnight.py'."""
+    if _overnight_running:
+        return {"status": "already_running"}
+
+    # Run in a thread to avoid blocking the API
+    thread = threading.Thread(target=_run_overnight_cycle)
+    thread.start()
+    return {"status": "started"}
 
 
 @app.get("/api/config")

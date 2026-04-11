@@ -249,6 +249,7 @@ def _store_document(doc_type: str, title: str, content: str) -> str:
         source_type=doc_type,
         source_trust=source_trust,
         chunk_count=chunk_count,
+        content=content,
     )
 
     return f"Document stored: {title} (type: {doc_type}, {chunk_count} chunks)"

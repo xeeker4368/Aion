@@ -6,3 +6,4 @@ cryptography
 requests
 pyyaml
 tavily-python
+rank-bm25

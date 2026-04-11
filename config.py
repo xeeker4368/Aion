@@ -16,12 +16,12 @@ DEV_MODE = "--dev" in sys.argv or os.environ.get("AION_DEV_MODE") == "1"
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 
-# In dev mode, databases go to data/dev/ — production data is untouched.
-# Vault, logs, and search limiter stay in data/ (shared).
+# Databases go to data/prod/ or data/dev/.
+# Vault, logs, search limiter, config, and backups stay in data/ (shared).
 if DEV_MODE:
     _DB_DIR = DATA_DIR / "dev"
 else:
-    _DB_DIR = DATA_DIR
+    _DB_DIR = DATA_DIR / "prod"
 
 ARCHIVE_DB = _DB_DIR / "archive.db"
 WORKING_DB = _DB_DIR / "working.db"
@@ -46,7 +46,7 @@ if _CONFIG_FILE.exists():
 # --- Ollama ---
 OLLAMA_HOST = _overrides.get("OLLAMA_HOST", "http://localhost:11434")
 CHAT_MODEL = _overrides.get("CHAT_MODEL", "llama3.1:8b-aion")
-CONSOLIDATION_MODEL = _overrides.get("CONSOLIDATION_MODEL", "qwen3:14b")
+CONSOLIDATION_MODEL = _overrides.get("CONSOLIDATION_MODEL", "gpt-oss:20b")
 EMBED_MODEL = _overrides.get("EMBED_MODEL", "nomic-embed-text")
 
 # --- Context Window Budget ---
@@ -85,3 +85,12 @@ INGEST_CHUNK_OVERLAP = _overrides.get("INGEST_CHUNK_OVERLAP", 300)
 
 # --- Observer ---
 OBSERVER_MIN_MESSAGES = _overrides.get("OBSERVER_MIN_MESSAGES", 6)
+
+# --- Overnight Cycle ---
+OVERNIGHT_HOUR = _overrides.get("OVERNIGHT_HOUR", 5)  # Local time, 24h format
+
+# --- Draft / Review / Revise Loop ---
+DRAFT_REVIEW_REVISE_ENABLED = _overrides.get("DRAFT_REVIEW_REVISE_ENABLED", False)
+DRAFT_TEMPERATURE = _overrides.get("DRAFT_TEMPERATURE", 0.7)
+REVIEW_TEMPERATURE = _overrides.get("REVIEW_TEMPERATURE", 0.5)
+REVISION_TEMPERATURE = _overrides.get("REVISION_TEMPERATURE", 0.7)

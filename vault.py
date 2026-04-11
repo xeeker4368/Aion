@@ -74,7 +74,11 @@ def init_secrets():
             _secrets = json.loads(decrypted.decode())
             logger.info(f"Loaded {len(_secrets)} secrets")
         except Exception as e:
-            logger.error(f"Failed to decrypt secrets: {e}")
+            import logging
+            logging.getLogger("aion.vault").warning(
+                f"Failed to decrypt secrets file: {e}. Starting with empty secrets. "
+                f"If this persists, the master key may be wrong."
+            )
             _secrets = {}
     else:
         _secrets = {}

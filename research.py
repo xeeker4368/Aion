@@ -145,6 +145,10 @@ def run_research(hours: int = 24) -> dict | None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     doc_id = f"research_{today}"
 
+    if db.document_exists(doc_id):
+        logger.info(f"Research already stored for {today}, skipping.")
+        return
+
     # Build a complete record
     research_record = response_text
     if tool_calls_made:
@@ -168,6 +172,7 @@ def run_research(hours: int = 24) -> dict | None:
         source_type="research",
         source_trust="secondhand",
         chunk_count=chunk_count,
+        content=research_record,
     )
 
     logger.info(

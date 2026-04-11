@@ -20,14 +20,13 @@ from datetime import datetime, timezone
 import ollama
 
 import db
-import memory
 from config import OLLAMA_HOST, CONSOLIDATION_MODEL, OBSERVER_MIN_MESSAGES
 from utils import format_timestamp
 
 logger = logging.getLogger("aion.observer")
 
 # Use the same model and context window as consolidation
-OBSERVER_MODEL = CONSOLIDATION_MODEL
+OBSERVER_MODEL = "gpt-oss:20b"
 OBSERVER_CTX = 16384
 
 OBSERVER_PROMPT = """You are observing a conversation between a human and an AI. Your job is to describe what the AI actually did in this conversation — not generalities about its style, but specific behaviors you can point to in the text.
@@ -43,10 +42,15 @@ Be specific. Reference what actually happened. Avoid generic descriptions like "
 
 Write 3-6 sentences. Only describe what is visible in the text. Do not speculate about internal states. Do not use scoring or rating systems.
 
+Finally: what actually happened in this conversation that is worth recording? Not behavioral patterns — those are covered above. What was the situation? Did the AI encounter something it hasn't encountered before? Did the conversation involve a new type of interaction, a breakthrough in understanding, a significant correction, or a moment where the AI's response was genuinely different from its usual output? If nothing stands out, say so. But if something happened here that hasn't happened in previous conversations, name it specifically.
+
+Context: The AI operates through text — it reads input and generates responses. It has real tools it can use (web search, API calls, document storage) and when it uses them, the results appear in the conversation. However, it sometimes narrates actions using asterisks (*accesses file*, *checks systems*) or claims to physically feel its hardware, see its processes, or experience sensory input. These are fabricated — the AI is generating text that describes actions it did not perform. Note these when you see them.
+
+Note any responses that appear to be stock trained language rather than genuine engagement with the specific conversation. These are phrases that could have come from any language model in any context — generic gratitude, formal status reports, novelty placeholders, or reflexive disclaimers about the AI's nature. Flag these separately from fabricated introspection. The question to ask: is there anything specific to this conversation underneath this response, or is it filling space?
+
 Here is the transcript:
 
 """
-
 
 def run_observer(hours: int = 24) -> list[dict]:
     """
@@ -139,15 +143,6 @@ def run_observer(hours: int = 24) -> list[dict]:
             message_count=len(messages),
         )
 
-        # Store in ChromaDB
-        doc_id = f"observation_{conv_id}"
-        memory.ingest_document(
-            doc_id=doc_id,
-            text=f"Behavioral observation:\n\n{characterization}",
-            title=f"Personality observation",
-            source_type="observation",
-            source_trust="secondhand",
-        )
 
         observations.append(observation)
 

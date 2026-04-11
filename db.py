@@ -45,6 +45,10 @@ def init_databases():
             CREATE INDEX IF NOT EXISTS idx_archive_conversation
             ON messages(conversation_id)
         """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_archive_timestamp
+            ON messages(timestamp)
+        """)
 
     # --- Working store: same data + processing metadata ---
     with _connect(WORKING_DB) as conn:
@@ -71,6 +75,22 @@ def init_databases():
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_working_conversation
             ON messages(conversation_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conversations_started
+            ON conversations(started_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conversations_ended
+            ON conversations(ended_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_working_timestamp
+            ON messages(timestamp)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_documents_source_type
+            ON documents(source_type)
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS summaries (
@@ -119,6 +139,32 @@ def init_databases():
                 consolidation_summary TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS self_knowledge (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                observation_count INTEGER,
+                journal_count INTEGER,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS self_reviews (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                draft TEXT NOT NULL,
+                review TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (message_id) REFERENCES messages(id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_self_reviews_message_id ON self_reviews(message_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_self_reviews_conversation_id ON self_reviews(conversation_id)"
+        )
         # Migration: add consolidated column if upgrading from Phase 1
         _migrate_working_db(conn)
 
@@ -135,6 +181,20 @@ def _migrate_working_db(conn):
     if "summary" not in doc_columns:
         conn.execute(
             "ALTER TABLE documents ADD COLUMN summary TEXT"
+        )
+    if "content" not in doc_columns:
+        conn.execute(
+            "ALTER TABLE documents ADD COLUMN content TEXT"
+        )
+
+    # Add self-knowledge columns to overnight_runs if upgrading
+    on_columns = {row[1] for row in conn.execute("PRAGMA table_info(overnight_runs)")}
+    if "self_knowledge_status" not in on_columns:
+        conn.execute(
+            "ALTER TABLE overnight_runs ADD COLUMN self_knowledge_status TEXT DEFAULT 'skipped'"
+        )
+        conn.execute(
+            "ALTER TABLE overnight_runs ADD COLUMN self_knowledge_summary TEXT"
         )
 
 
@@ -230,6 +290,60 @@ def save_message(conversation_id: str, role: str, content: str) -> dict:
         "content": content,
         "timestamp": now,
     }
+
+
+def save_self_review(
+    message_id: str,
+    conversation_id: str,
+    draft: str,
+    review: str,
+) -> dict:
+    """
+    Store a draft and its review, linked to the final assistant message
+    that was actually sent to the user. The message_id must already exist
+    in the working.db messages table — call save_message first, then call
+    this with the returned message id.
+
+    Returns the self_review as a dict.
+    """
+    review_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _connect(WORKING_DB) as conn:
+        conn.execute(
+            """
+            INSERT INTO self_reviews
+                (id, message_id, conversation_id, draft, review, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (review_id, message_id, conversation_id, draft, review, now),
+        )
+
+    return {
+        "id": review_id,
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "draft": draft,
+        "review": review,
+        "created_at": now,
+    }
+
+
+def get_self_review_for_message(message_id: str) -> dict | None:
+    """Get the self_review linked to a specific message, or None."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT * FROM self_reviews WHERE message_id = ? LIMIT 1",
+            (message_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_self_reviews() -> int:
+    """Count total self_reviews stored."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute("SELECT COUNT(*) FROM self_reviews").fetchone()
+    return row[0] if row else 0
 
 
 def get_conversation_messages(conversation_id: str) -> list[dict]:
@@ -336,16 +450,26 @@ def get_summary(conversation_id: str) -> str | None:
     return row["content"] if row else None
 
 
+def document_exists(doc_id: str) -> bool:
+    """Check if a document with this ID already exists."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM documents WHERE id = ? LIMIT 1",
+            (doc_id,),
+        ).fetchone()
+    return row is not None
+
+
 def save_document(doc_id: str, title: str, url: str = None,
                   source_type: str = "article", source_trust: str = "thirdhand",
-                  chunk_count: int = 0):
-    """Record an ingested document for UI and batch processing."""
+                  chunk_count: int = 0, content: str = None):
+    """Record an ingested document with its full content for rebuild safety."""
     now = datetime.now(timezone.utc).isoformat()
     with _connect(WORKING_DB) as conn:
         conn.execute(
             "INSERT INTO documents (id, title, url, source_type, source_trust, "
-            "chunk_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (doc_id, title, url, source_type, source_trust, chunk_count, now),
+            "chunk_count, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, title, url, source_type, source_trust, chunk_count, content, now),
         )
 
 
@@ -471,14 +595,17 @@ def save_overnight_run(run_data: dict):
             "INSERT INTO overnight_runs "
             "(id, started_at, ended_at, duration_seconds, conversations_closed, "
             "research_status, research_summary, journal_status, journal_summary, "
-            "observer_status, observer_summary, consolidation_status, consolidation_summary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "observer_status, observer_summary, "
+            "self_knowledge_status, self_knowledge_summary, "
+            "consolidation_status, consolidation_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_data["id"], run_data["started_at"], run_data.get("ended_at"),
                 run_data.get("duration_seconds"), run_data.get("conversations_closed", 0),
                 run_data.get("research_status", "skipped"), run_data.get("research_summary"),
                 run_data.get("journal_status", "skipped"), run_data.get("journal_summary"),
                 run_data.get("observer_status", "skipped"), run_data.get("observer_summary"),
+                run_data.get("self_knowledge_status", "skipped"), run_data.get("self_knowledge_summary"),
                 run_data.get("consolidation_status", "skipped"), run_data.get("consolidation_summary"),
             ),
         )
@@ -501,3 +628,45 @@ def get_latest_overnight_run() -> dict | None:
             "SELECT * FROM overnight_runs ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
     return dict(row) if row else None
+
+
+def save_self_knowledge(content: str, observation_count: int,
+                        journal_count: int) -> dict:
+    """Save the current self-knowledge narrative, replacing any previous version."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _connect(WORKING_DB) as conn:
+        conn.execute("DELETE FROM self_knowledge")
+        conn.execute(
+            "INSERT INTO self_knowledge "
+            "(id, content, observation_count, journal_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("current", content, observation_count, journal_count, now),
+        )
+
+    return {
+        "id": "current",
+        "content": content,
+        "observation_count": observation_count,
+        "journal_count": journal_count,
+        "created_at": now,
+    }
+
+
+def get_latest_self_knowledge() -> dict | None:
+    """Get the most recent self-knowledge narrative."""
+    with _connect(WORKING_DB) as conn:
+        row = conn.execute(
+            "SELECT * FROM self_knowledge ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_self_knowledge_history(limit: int = 10) -> list[dict]:
+    """Get recent self-knowledge narratives, newest first."""
+    with _connect(WORKING_DB) as conn:
+        rows = conn.execute(
+            "SELECT * FROM self_knowledge ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]

@@ -24,6 +24,7 @@ from consolidation import consolidate_pending
 from journal import run_journal
 from research import run_research
 from observer import run_observer
+from pattern_recognition import run_pattern_recognition
 from config import LIVE_CHUNK_INTERVAL
 
 logging.basicConfig(
@@ -110,27 +111,8 @@ def run_overnight():
         run_data["research_status"] = "failed"
         run_data["research_summary"] = str(e)[:200]
 
-    # Step 2: Journal
-    logger.info("--- Step 2: Journal ---")
-    try:
-        result = run_journal()
-        if result:
-            run_data["journal_status"] = "success"
-            run_data["journal_summary"] = (
-                f"Reflected on {result['experience_chars']} chars of experiences"
-            )
-            logger.info(f"Journal entry written: {run_data['journal_summary']}")
-        else:
-            run_data["journal_status"] = "skipped"
-            run_data["journal_summary"] = "Nothing to reflect on"
-            logger.info("Journal: nothing to reflect on.")
-    except Exception as e:
-        logger.error(f"Journal failed: {e}")
-        run_data["journal_status"] = "failed"
-        run_data["journal_summary"] = str(e)[:200]
-
-    # Step 3: Personality observer
-    logger.info("--- Step 3: Personality Observer ---")
+    # Step 2: Personality Observer
+    logger.info("--- Step 2: Personality Observer ---")
     try:
         results = run_observer()
         if results:
@@ -148,8 +130,48 @@ def run_overnight():
         run_data["observer_status"] = "failed"
         run_data["observer_summary"] = str(e)[:200]
 
-    # Step 4: Consolidation
-    logger.info("--- Step 4: Consolidation ---")
+    # Step 3: Self-Knowledge (Pattern Recognition)
+    logger.info("--- Step 3: Self-Knowledge ---")
+    try:
+        result = run_pattern_recognition()
+        if result:
+            run_data["self_knowledge_status"] = "success"
+            run_data["self_knowledge_summary"] = (
+                f"Narrative updated ({result['observation_count']} observations, "
+                f"{result['journal_count']} journals)"
+            )
+            logger.info(f"Self-knowledge: {run_data['self_knowledge_summary']}")
+        else:
+            run_data["self_knowledge_status"] = "skipped"
+            run_data["self_knowledge_summary"] = "Not enough data"
+            logger.info("Self-knowledge: not enough data yet.")
+    except Exception as e:
+        logger.error(f"Self-knowledge failed: {e}")
+        run_data["self_knowledge_status"] = "failed"
+        run_data["self_knowledge_summary"] = str(e)[:200]
+
+    # Step 4: Journal
+    logger.info("--- Step 4: Journal ---")
+    try:
+        result = run_journal()
+        if result:
+            run_data["journal_status"] = "success"
+            total_chars = sum(e["experience_chars"] for e in result)
+            run_data["journal_summary"] = (
+                f"{len(result)} entries, {total_chars} chars of experiences"
+            )
+            logger.info(f"Journal: {run_data['journal_summary']}")
+        else:
+            run_data["journal_status"] = "skipped"
+            run_data["journal_summary"] = "Nothing to reflect on"
+            logger.info("Journal: nothing to reflect on.")
+    except Exception as e:
+        logger.error(f"Journal failed: {e}")
+        run_data["journal_status"] = "failed"
+        run_data["journal_summary"] = str(e)[:200]
+
+    # Step 5: Consolidation
+    logger.info("--- Step 5: Consolidation ---")
     try:
         pending = db.get_unconsolidated_conversations()
         consolidate_pending()

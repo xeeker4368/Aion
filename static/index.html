@@ -99,6 +99,16 @@ body {
 .msg-meta { display: flex; gap: 4px; flex-wrap: wrap; margin-top: -2px; margin-bottom: 4px; }
 .pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--bg-surface); color: var(--text-faint); }
 .pill.tool { background: var(--accent-bg); color: var(--accent); }
+.msg-reasoning { margin-top: 4px; margin-bottom: 8px; font-size: 12px; }
+.msg-reasoning summary { cursor: pointer; color: var(--text-faint); padding: 4px 0; list-style: none; user-select: none; }
+.msg-reasoning summary::-webkit-details-marker { display: none; }
+.msg-reasoning summary::before { content: "▸ "; display: inline-block; transition: transform 0.15s; }
+.msg-reasoning[open] summary::before { content: "▾ "; }
+.msg-reasoning summary:hover { color: var(--text); }
+.reasoning-block { margin-top: 8px; padding: 10px 12px; background: var(--bg-surface); border-radius: 8px; border-left: 2px solid var(--border); }
+.reasoning-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); margin-bottom: 4px; font-weight: 500; }
+.reasoning-text { color: var(--text); white-space: pre-wrap; line-height: 1.5; }
+.reasoning-block + .reasoning-block { margin-top: 8px; }
 .thinking { align-self: flex-start; font-size: 13px; color: var(--text-faint); padding: 10px 14px; }
 .thinking::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
 @keyframes dots { 0%,20%{content:''} 40%{content:'.'} 60%{content:'..'} 80%,100%{content:'...'} }
@@ -407,11 +417,45 @@ function switchView(name) {
 }
 
 /* ============ CHAT ============ */
-function addMessage(role, text, debug) {
+function addMessage(role, text, debug, reasoning) {
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     div.textContent = text;
     msgEl.appendChild(div);
+    if (role === 'assistant' && reasoning && (reasoning.draft || reasoning.review)) {
+        const details = document.createElement('details');
+        details.className = 'msg-reasoning';
+        const summary = document.createElement('summary');
+        summary.textContent = 'reasoning';
+        details.appendChild(summary);
+        if (reasoning.draft) {
+            const draftBlock = document.createElement('div');
+            draftBlock.className = 'reasoning-block';
+            const draftLabel = document.createElement('div');
+            draftLabel.className = 'reasoning-label';
+            draftLabel.textContent = 'first draft';
+            const draftText = document.createElement('div');
+            draftText.className = 'reasoning-text';
+            draftText.textContent = reasoning.draft;
+            draftBlock.appendChild(draftLabel);
+            draftBlock.appendChild(draftText);
+            details.appendChild(draftBlock);
+        }
+        if (reasoning.review) {
+            const reviewBlock = document.createElement('div');
+            reviewBlock.className = 'reasoning-block';
+            const reviewLabel = document.createElement('div');
+            reviewLabel.className = 'reasoning-label';
+            reviewLabel.textContent = 'looking at it';
+            const reviewText = document.createElement('div');
+            reviewText.className = 'reasoning-text';
+            reviewText.textContent = reasoning.review;
+            reviewBlock.appendChild(reviewLabel);
+            reviewBlock.appendChild(reviewText);
+            details.appendChild(reviewBlock);
+        }
+        msgEl.appendChild(details);
+    }
     if (role === 'assistant' && debug) {
         const meta = document.createElement('div');
         meta.className = 'msg-meta';
@@ -504,14 +548,15 @@ async function sendMessage() {
         hideThinking();
         if (!res.ok) { addMessage('system-msg','Error: could not get response'); return; }
         const data = await res.json();
-        addMessage('assistant', data.response, data.debug);
+        const reasoning = (data.draft || data.review) ? { draft: data.draft, review: data.review } : null;
+        addMessage('assistant', data.response, data.debug, reasoning);
         updateContext(data.debug);
         document.getElementById('chatMeta').textContent = data.memories_used + ' memories';
-        // Cache debug for reload persistence
+        // Cache debug + reasoning for reload persistence
         if (data.debug && data.conversation_id) {
             _convId = data.conversation_id;
             const idx = msgEl.querySelectorAll('.msg.assistant').length - 1;
-            _debugCache[idx] = data.debug;
+            _debugCache[idx] = { debug: data.debug, reasoning: reasoning };
             try { localStorage.setItem('aion_debug_' + _convId, JSON.stringify(_debugCache)); } catch(e) {}
         }
     } catch(e) { hideThinking(); addMessage('system-msg','Connection error'); }
@@ -808,12 +853,28 @@ async function init() {
             try { _debugCache = JSON.parse(localStorage.getItem('aion_debug_' + _convId) || '{}'); } catch(e) { _debugCache = {}; }
             let assistantIdx = 0;
             data.messages.forEach(m => {
-                const debug = m.role === 'assistant' ? _debugCache[assistantIdx++] || null : null;
-                addMessage(m.role, m.content, debug);
+                let cachedDebug = null;
+                let cachedReasoning = null;
+                if (m.role === 'assistant') {
+                    const entry = _debugCache[assistantIdx++];
+                    if (entry && typeof entry === 'object') {
+                        // New cache shape: { debug, reasoning }
+                        if ('debug' in entry || 'reasoning' in entry) {
+                            cachedDebug = entry.debug || null;
+                            cachedReasoning = entry.reasoning || null;
+                        } else {
+                            // Legacy cache shape: debug object stored directly
+                            cachedDebug = entry;
+                        }
+                    }
+                }
+                addMessage(m.role, m.content, cachedDebug, cachedReasoning);
             });
             if (Object.keys(_debugCache).length) {
                 const lastIdx = Math.max(...Object.keys(_debugCache).map(Number));
-                updateContext(_debugCache[lastIdx]);
+                const lastEntry = _debugCache[lastIdx];
+                const lastDebugData = (lastEntry && typeof lastEntry === 'object' && 'debug' in lastEntry) ? lastEntry.debug : lastEntry;
+                if (lastDebugData) updateContext(lastDebugData);
             }
         }
     } catch(e) {}

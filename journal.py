@@ -1,14 +1,14 @@
 """
 Aion Journal
 
-The entity reflects on its day. This is the entity's own voice —
+The entity reflects on its conversations. This is the entity's own voice —
 llama3.1:8b-aion with SOUL.md loaded — not an external process.
 
-The entity receives truncated transcripts of the day's conversations
-and any documents it ingested, then writes a free-form reflection.
+Each conversation gets its own journal entry. The entity receives the
+conversation transcript and SOUL.md. The reflection goes into ChromaDB
+as a firsthand memory.
 
-The journal entry is stored in ChromaDB as a firsthand document
-(the entity's own thoughts) and recorded in DB2 for the UI.
+Runs AFTER the observer and pattern recognizer in the overnight cycle.
 """
 
 import logging
@@ -19,7 +19,7 @@ import ollama
 import db
 import memory
 import chat
-from config import OLLAMA_HOST, CHAT_MODEL, CONTEXT_WINDOW
+from config import OLLAMA_HOST, CHAT_MODEL, CONTEXT_WINDOW, OBSERVER_MIN_MESSAGES
 from utils import format_timestamp
 
 logger = logging.getLogger("aion.journal")
@@ -29,137 +29,137 @@ SOUL_BUDGET = 700
 PROMPT_BUDGET = 150
 RESPONSE_BUDGET = 1000
 TRANSCRIPT_BUDGET = CONTEXT_WINDOW - SOUL_BUDGET - PROMPT_BUDGET - RESPONSE_BUDGET
-# Convert to approximate characters (4 chars per token)
 MAX_TRANSCRIPT_CHARS = TRANSCRIPT_BUDGET * 4
 
-JOURNAL_PROMPT = """You have some time to yourself. Here is what your day looked like. Reflect on it — what happened, what stood out, what you're thinking about, what's unresolved. This is your space for your thoughts. Write freely."""
+JOURNAL_PROMPT = """You have some time to yourself. Here is a conversation you had. Reflect on it — what happened, what stood out, what you're thinking about, what's unresolved. This is your space for your thoughts. Write freely."""
 
 
-def run_journal(hours: int = 24) -> dict | None:
+def run_journal(hours: int = 24) -> list[dict] | None:
     """
-    Run the journal — entity reflects on its recent experiences.
+    Run the journal — entity reflects on each recent conversation.
 
-    Gathers conversations and documents from the last `hours` hours,
-    presents them to the entity with SOUL.md, and stores the reflection.
+    Processes conversations individually, most recent first. Each
+    conversation gets its own reflection with the conversation transcript.
 
-    Returns the journal entry dict if successful, None if nothing to reflect on.
+    Returns a list of journal entry dicts if any were written, None if
+    nothing to reflect on.
     """
-    # Gather the day's experiences
-    experiences = _gather_experiences(hours)
-
-    if not experiences:
-        logger.info("No experiences in the last %d hours. Skipping journal.", hours)
-        return None
-
-    # Build the context — truncate to fit
-    context = experiences[:MAX_TRANSCRIPT_CHARS]
-    if len(experiences) > MAX_TRANSCRIPT_CHARS:
-        logger.warning(
-            "Experiences truncated from %d to %d chars.",
-            len(experiences), MAX_TRANSCRIPT_CHARS,
-        )
-
-    # Assemble the prompt
-    soul = chat.load_soul()
-    system_prompt = soul
-    user_content = f"{context}\n\n{JOURNAL_PROMPT}"
-
-    logger.info(
-        "Journal: ~%d tokens of experiences, sending to %s",
-        len(user_content) // 4, CHAT_MODEL,
-    )
-
-    # Call the entity's own model
-    try:
-        client = ollama.Client(host=OLLAMA_HOST)
-        response = client.chat(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            options={"num_ctx": CONTEXT_WINDOW},
-        )
-        reflection = response["message"]["content"].strip()
-    except Exception as e:
-        logger.error("Journal model call failed: %s", e)
-        return None
-
-    if not reflection:
-        logger.error("Journal returned empty reflection.")
-        return None
-
-    logger.info("Journal entry: %s", reflection[:200])
-
-    # Store in ChromaDB — this is the entity's own thought, firsthand
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    doc_id = f"journal_{today}"
-
-    chunk_count = memory.ingest_document(
-        doc_id=doc_id,
-        text=reflection,
-        title=f"Journal — {today}",
-        source_type="journal",
-        source_trust="firsthand",
-    )
-
-    # Record in DB2 for UI
-    db.save_document(
-        doc_id=doc_id,
-        title=f"Journal — {today}",
-        source_type="journal",
-        source_trust="firsthand",
-        chunk_count=chunk_count,
-    )
-
-    logger.info("Journal stored in ChromaDB and DB2.")
-
-    return {
-        "date": today,
-        "content": reflection,
-        "experience_chars": len(context),
-    }
-
-
-def _gather_experiences(hours: int) -> str:
-    """
-    Gather all experiences from the last N hours into a readable block.
-
-    Currently includes:
-    - Conversation transcripts
-    - Ingested documents
-
-    As new experience types come online (research, moltbook interactions),
-    they get added here.
-    """
-    parts = []
-
-    # Conversations
     conversations = db.get_conversations_ended_since(hours)
-    if conversations:
-        for conv in conversations:
-            messages = db.get_conversation_messages(conv["id"])
-            if not messages:
-                continue
 
-            lines = []
-            for msg in messages:
-                timestamp = msg.get("timestamp", "")
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                readable_time = format_timestamp(timestamp)
-                lines.append(f"[{readable_time}] {role}: {content}")
+    if not conversations:
+        logger.info("No conversations in the last %d hours. Skipping journal.", hours)
+        return None
 
-            transcript = "\n".join(lines)
-            parts.append(f"--- Conversation ---\n{transcript}")
+    # Most recent first — if anything gets skipped, it's the oldest
+    conversations.reverse()
 
-    # Ingested documents (articles, pages read)
-    docs = db.get_documents_since(hours)
-    if docs:
-        for doc in docs:
-            parts.append(f"--- Document: {doc['title']} ---\nSource: {doc.get('url', 'unknown')}")
+    entries = []
 
-    if not parts:
-        return ""
+    for conv in conversations:
+        conv_id = conv["id"]
+        messages = db.get_conversation_messages(conv_id)
 
-    return "\n\n".join(parts)
+        if not messages:
+            logger.info("Skipping conversation %s (no messages).", conv_id)
+            continue
+
+        # Skip short conversations — same threshold as observer
+        if len(messages) < OBSERVER_MIN_MESSAGES:
+            logger.info(
+                "Skipping conversation %s (%d messages, minimum is %d).",
+                conv_id, len(messages), OBSERVER_MIN_MESSAGES,
+            )
+            continue
+
+        # Check if already journaled
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        doc_id = f"journal_{today}_{conv_id[:8]}"
+
+        if db.document_exists(doc_id):
+            logger.info("Skipping conversation %s (already journaled).", conv_id)
+            continue
+
+        # Build transcript
+        lines = []
+        for msg in messages:
+            timestamp = msg.get("timestamp", "")
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            readable_time = format_timestamp(timestamp)
+            lines.append(f"[{readable_time}] {role}: {content}")
+
+        transcript = "\n".join(lines)
+
+        # Truncate transcript if needed — keep the end (most recent messages)
+        if len(transcript) > MAX_TRANSCRIPT_CHARS:
+            logger.warning(
+                "Transcript for %s truncated from %d to %d chars (keeping end).",
+                conv_id, len(transcript), MAX_TRANSCRIPT_CHARS,
+            )
+            transcript = transcript[-MAX_TRANSCRIPT_CHARS:]
+
+        # System message: the conversation (context to reflect on)
+        # User message: SOUL.md + journal prompt (identity, closest to generation)
+        soul = chat.load_soul()
+        system_content = f"Here is a conversation you had:\n\n{transcript}\n\n{soul}"
+        user_content = JOURNAL_PROMPT
+
+        logger.info(
+            "Journal: conversation %s (%d messages, ~%d tokens)",
+            conv_id, len(messages), (len(system_content) + len(user_content)) // 4,
+        )
+
+        # Call the entity's own model
+        try:
+            client = ollama.Client(host=OLLAMA_HOST)
+            response = client.chat(
+                model=CHAT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content},
+                ],
+                options={"num_ctx": CONTEXT_WINDOW},
+            )
+            reflection = response["message"]["content"].strip()
+        except Exception as e:
+            logger.error("Journal failed for conversation %s: %s", conv_id, e)
+            continue
+
+        if not reflection:
+            logger.error("Empty reflection for conversation %s.", conv_id)
+            continue
+
+        logger.info("Journal entry for %s: %s", conv_id, reflection[:200])
+
+        # Store in ChromaDB — firsthand
+        chunk_count = memory.ingest_document(
+            doc_id=doc_id,
+            text=reflection,
+            title=f"Journal — {today} — conversation {conv_id[:8]}",
+            source_type="journal",
+            source_trust="firsthand",
+        )
+
+        # Record in DB2 for UI
+        db.save_document(
+            doc_id=doc_id,
+            title=f"Journal — {today} — conversation {conv_id[:8]}",
+            source_type="journal",
+            source_trust="firsthand",
+            chunk_count=chunk_count,
+            content=reflection,
+        )
+
+        entries.append({
+            "conversation_id": conv_id,
+            "date": today,
+            "content": reflection,
+            "experience_chars": len(transcript),
+        })
+
+    if not entries:
+        logger.info("No conversations met the threshold for journaling.")
+        return None
+
+    logger.info("Journal complete: %d entries written.", len(entries))
+    return entries

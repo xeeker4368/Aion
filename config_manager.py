@@ -20,7 +20,7 @@ CONFIG_FILE = DATA_DIR / "config.json"
 EDITABLE_SETTINGS = {
     "OLLAMA_HOST": {"default": "http://localhost:11434", "type": "string"},
     "CHAT_MODEL": {"default": "llama3.1:8b-aion", "type": "string"},
-    "CONSOLIDATION_MODEL": {"default": "qwen3:14b", "type": "string"},
+    "CONSOLIDATION_MODEL": {"default": "gpt-oss:20b", "type": "string"},
     "EMBED_MODEL": {"default": "nomic-embed-text", "type": "string"},
     "CONTEXT_WINDOW": {"default": 10240, "type": "integer"},
     "LIVE_CHUNK_INTERVAL": {"default": 10, "type": "integer"},

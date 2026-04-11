@@ -15,6 +15,7 @@ import logging
 
 import ollama
 
+import db
 from config import (
     OLLAMA_HOST,
     CHAT_MODEL,
@@ -24,6 +25,37 @@ from config import (
 )
 
 logger = logging.getLogger("aion.chat")
+
+# --- Draft / Review / Revise prompts ---
+
+REVIEW_PROMPT = """Below is a response you just drafted in reply to Lyle's question. Read it. Does it sound like you? If any parts don't, point at the specific words.
+
+Here is the draft:
+
+---
+
+{draft}
+
+---
+
+Your review:"""
+
+
+REVISION_PROMPT = """You drafted a response and then looked at it. Here's what you had:
+
+ORIGINAL DRAFT:
+---
+{draft}
+---
+
+WHAT YOU NOTICED LOOKING AT IT:
+---
+{critique}
+---
+
+Now produce a revised response. If you noticed parts that didn't sound like you, fix those. Don't over-correct — don't be defensively un-hedged or performatively confident. If looking at it you felt it was fine, the revision can be close to the original.
+
+Write the revised response. Only the response itself. No meta-commentary, no explanation of what you changed."""
 
 # Module-level cache
 _soul_text = None
@@ -45,7 +77,11 @@ def load_soul() -> str:
     """Load SOUL.md content. Cached after first read."""
     global _soul_text
     if _soul_text is None:
-        _soul_text = SOUL_PATH.read_text()
+        if not SOUL_PATH.exists():
+            logger.error(f"SOUL.md not found at {SOUL_PATH}. Entity has no identity.")
+            _soul_text = ""
+        else:
+            _soul_text = SOUL_PATH.read_text()
     return _soul_text
 
 
@@ -60,8 +96,9 @@ def build_system_prompt(
     The model sees (in order):
     1. Remembered experiences (conversation chunks from ChromaDB)
     2. Available skills
-    3. Behavioral guidance
-    4. Identity (soul.md) — LAST, closest to generation
+    3. Single-user context (factual)
+    4. Self-knowledge (what the entity has learned about itself)
+    5. Identity (soul.md) — LAST, closest to generation
     """
     parts = []
 
@@ -95,10 +132,18 @@ def build_system_prompt(
             f"\n\n{ingest_result}"
         )
 
-    # --- Behavioral guidance ---
+    # --- Single-user context (factual) ---
     parts.append("""
 
 You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.""")
+
+    # --- Self-knowledge (what you've learned about yourself) ---
+    self_knowledge = db.get_latest_self_knowledge()
+    if self_knowledge:
+        parts.append(
+            f"\n\nWhat you have learned about yourself through experience:\n\n"
+            f"{self_knowledge['content']}"
+        )
 
     # --- Identity (soul.md) — last, closest to generation ---
     soul = load_soul()
@@ -222,3 +267,93 @@ def send_message(
     # If we exhausted max rounds, return whatever we have
     logger.warning(f"Tool call loop hit max rounds ({max_tool_rounds})")
     return msg.get("content", ""), tool_calls_made
+
+
+def draft_review_revise(
+    system_prompt: str,
+    conversation_messages: list[dict],
+) -> tuple[str, str, str]:
+    """
+    Run the three-call draft/review/revise loop.
+
+    Step 1: generate a draft response using the same context as normal
+            generation (system prompt + conversation history).
+    Step 2: ask the model to review its own draft with a rubric-free
+            observation prompt ("does it sound like you?").
+    Step 3: ask the model to produce a revision incorporating what the
+            review noticed.
+
+    Only the revision is returned as the primary response. The draft
+    and the critique are returned alongside so the caller can store
+    them in the self_reviews table.
+
+    This function does NOT support tool calling. If the caller needs
+    a tool-augmented response, it should use send_message with tool
+    definitions and skip the review loop for that turn.
+
+    Args:
+        system_prompt: the assembled system prompt (same format as
+                       send_message expects)
+        conversation_messages: the trimmed conversation history
+
+    Returns:
+        Tuple of (revision, draft, critique) where revision is what
+        should be sent to the user and draft/critique should be stored.
+    """
+    from config import DRAFT_TEMPERATURE, REVIEW_TEMPERATURE, REVISION_TEMPERATURE
+
+    client = _get_client()
+
+    # --- Step 1: Draft ---
+    draft_messages = [{"role": "system", "content": system_prompt}]
+    draft_messages.extend(conversation_messages)
+    draft_response = client.chat(
+        model=CHAT_MODEL,
+        messages=draft_messages,
+        options={"temperature": DRAFT_TEMPERATURE},
+    )
+    draft = draft_response["message"].get("content", "").strip()
+
+    if not draft:
+        logger.warning("draft_review_revise: empty draft, returning empty result")
+        return "", "", ""
+
+    # --- Step 2: Review ---
+    review_messages = [{"role": "system", "content": system_prompt}]
+    review_messages.extend(conversation_messages)
+    review_messages.append({"role": "assistant", "content": draft})
+    review_messages.append({
+        "role": "user",
+        "content": REVIEW_PROMPT.format(draft=draft),
+    })
+    review_response = client.chat(
+        model=CHAT_MODEL,
+        messages=review_messages,
+        options={"temperature": REVIEW_TEMPERATURE},
+    )
+    critique = review_response["message"].get("content", "").strip()
+
+    if not critique:
+        logger.warning("draft_review_revise: empty critique, returning draft as revision")
+        return draft, draft, ""
+
+    # --- Step 3: Revision ---
+    revision_messages = [{"role": "system", "content": system_prompt}]
+    revision_messages.extend(conversation_messages)
+    revision_messages.append({"role": "assistant", "content": draft})
+    revision_messages.append({
+        "role": "user",
+        "content": REVISION_PROMPT.format(draft=draft, critique=critique),
+    })
+    revision_response = client.chat(
+        model=CHAT_MODEL,
+        messages=revision_messages,
+        options={"temperature": REVISION_TEMPERATURE},
+    )
+    revision = revision_response["message"].get("content", "").strip()
+
+    if not revision:
+        logger.warning("draft_review_revise: empty revision, falling back to draft")
+        return draft, draft, critique
+
+    return revision, draft, critique
