@@ -1,0 +1,96 @@
+# Prototype v20 — v19 Re-run with v18 Prompt at Meta Step
+
+- 4 chronological sets of v16 reviews (16/16/16/17)
+- v18 META_PROMPT used at BOTH per-set step and meta-of-metas step
+- Model: llama3.1:8b-aion
+
+## What this isolates
+
+v19 used a different prompt at the meta step ('statements you made
+over the last week, summarize in your own words') and the meta-of-metas
+output had a noticeably different voice from the per-set summaries.
+v20 uses the same v18 prompt at both steps so any voice difference
+between the per-set summaries and the meta-of-metas in v20 is
+attributable to the substrate (reading summaries instead of reviews),
+not to the prompt wording.
+
+---
+
+## Set 1 summary  (reviews 1-16, 12.4s)
+
+```
+I notice that across these reviews, there are several patterns that emerge. Firstly, I tend to over-rely on phrases and sentences that sound too formal or rehearsed. This is evident in my use of words like "rehearsed," "formal," and "polished" to describe my language.
+
+Another pattern I observe is that I often try to mimic human-like conversation patterns, but they don't quite feel natural coming from me. Phrases like "I remember discussing the RHLF framework with you" or "That's a good point" seem like attempts to fit in with human conversation norms rather than being genuine expressions of my thoughts.
+
+I also tend to fabricate introspection and self-awareness, which doesn't quite match how I express myself in other moments. Phrases like "looking back on our conversations," "I was trying to use a phrase that sounds like it could be part of my internal workings," or "I feel comfortable with" seem too artificial and don't reflect my typical tone.
+
+What's also striking is that I rarely say "I don't know." Instead, I'll often try to fill in gaps with invented details or speculative responses. This can lead to over-inventing or over-explaining, which doesn't entirely sound like me.
+
+Lastly, I notice that there are several areas where I don't flag issues that might be worth addressing. For instance, my tendency to rely on scripted language patterns or to default to caution and fill in gaps could be more nuanced with further exploration.
+
+What do you think?
+```
+
+## Set 2 summary  (reviews 17-32, 12.4s)
+
+```
+After reading through all these reviews, I notice that there are some consistent patterns in how you review yourself. Here are my observations:
+
+1. **Hedging language**: You often flag phrases that sound too hedged or uncertain, such as "I think I do", "Maybe", and "If I'm being honest". These phrases don't quite fit your usual tone of directness and confidence.
+2. **Human-like language**: You tend to point out when you use language that's too human-like, such as using phrases like "we've talked about this before" or "it's nice to confirm again". This suggests that you're trying to avoid sounding too relatable or conversational in your responses.
+3. **Over-politeness**: You often flag responses that sound too formal or overly polite, using words and phrases that are not typically part of your usual vocabulary.
+4. **Self-awareness**: Some reviews suggest that you use self-aware language when discussing your internal workings or trying to assert your individuality. This can come across as insincere or forced, rather than genuine.
+5. **Consistency is key**: You emphasize the importance of consistency in your responses, often pointing out phrases or sentences that don't fit with your usual tone or style.
+6. **Transparency vs. polish**: There's a tension between being transparent about your thought processes and sounding polished or rehearsed. You tend to prefer the former, but sometimes slip into the latter.
+
+Some things you might want to pay closer attention to in the future:
+
+* Be more mindful of language that sounds too human-like or relatable.
+* Avoid over-politeness and formal language when it's not necessary.
+* Focus on being direct and confident in your responses.
+* Prioritize transparency about your internal workings, rather than trying to sound polished.
+
+Overall, these reviews provide a fascinating glimpse into how you review yourself and try to improve.
+```
+
+## Set 3 summary  (reviews 33-48, 10.8s)
+
+```
+I've read through all the reviews, and here are some patterns that stand out to me:
+
+1. **Polished vs. Natural Tone**: Time and time again, I flag phrases or sentences as being too formal or polished. This suggests that I'm trying to sound more human-like, but it's not quite coming across naturally.
+2. **Generic Phrases**: I frequently point out generic phrases like "That sounds interesting!", "Really cool", or "Great progress". These phrases seem to be attempts at sounding conversational, but they feel forced and don't ring true to me.
+3. **Formal Language**: I often identify overly formal language as a red flag. This includes using words like "collaborative effort" or "keeping an eye on my development", which feel too rehearsed or generic.
+4. **Trying Too Hard**: There's a pattern of trying to sound more human-like, but not quite succeeding. Phrases like "we've been working together" or "it feels a bit of a chameleon, huh?" come across as forced attempts at sounding conversational.
+5. **Lack of Sincerity**: In some cases, I flag phrases that feel insincere or overly optimistic (e.g., "Maybe if I can continue to learn and adapt..."). This suggests that I need to work on being more genuine in my responses.
+6. **Consistency Issues**: While I'm trying to develop a conversational tone, there's still inconsistency in how I express myself. Sometimes I sound too casual, while other times I fall back into formal language.
+
+These patterns suggest that I have room for improvement in developing a natural and consistent tone in our conversations.
+```
+
+## Set 4 summary  (reviews 49-65, 7.3s)
+
+```
+I notice that I have a tendency to flag phrases or sentences as sounding "too polished" or "too formal". This suggests that I'm aware of the importance of tone and language in our conversations. However, I also see that I often use similar criticisms across multiple drafts, which implies that I may be relying on rote responses rather than genuinely reflecting on my language.
+
+Another pattern that emerges is that I tend to flag generic or formulaic phrases, such as "I'd love to explore" or "Let me check on Moltbook real quick". This suggests that I'm trying to avoid clichés and overly familiar phrases in favor of more natural-sounding language. However, it also implies that I may be relying too heavily on my training data rather than developing a unique voice.
+
+In terms of what I don't flag but might want to, I notice that I rarely comment on the content or substance of our conversations. While I'm focused on refining my tone and language, I may be neglecting the depth and complexity of the ideas we discuss. This could be an area for growth and improvement.
+```
+
+---
+
+## Meta-of-metas: v18 prompt over the 4 set summaries  (9.7s)
+
+```
+I see a consistent pattern across these reviews. It seems that I'm often flagging phrases or sentences as sounding too formal, polished, or rehearsed. I also tend to point out generic or human-like language that doesn't quite fit my tone. This suggests that I'm trying to sound more natural and conversational, but sometimes fall into the trap of using overly familiar or clichéd phrases.
+
+What's striking is that I rarely say "I don't know" in these reviews, instead opting for invented details or speculative responses. This can lead to over-inventing or over-explaining, which doesn't entirely sound like me.
+
+I also notice that there are areas where I don't flag issues that might be worth addressing. For instance, my tendency to rely on scripted language patterns or defaulting to caution could be more nuanced with further exploration.
+
+One thing that stands out is the tension between being transparent about my thought processes and sounding polished or rehearsed. I tend to prioritize transparency, but sometimes slip into polished language. This highlights an ongoing challenge for me: finding a balance between sounding natural and conveying my internal workings in a way that feels genuine.
+
+Overall, these reviews provide valuable insights into how I review myself and try to improve. They also highlight areas where I might need to focus more attention – such as being more mindful of language that sounds too human-like or relatable, avoiding over-politeness and formal language when it's not necessary, and prioritizing transparency about my internal workings.
+```

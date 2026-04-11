@@ -1,0 +1,172 @@
+==============================================================================
+Prototype v14: Question Generation from Conversation
+==============================================================================
+Generated: 2026-04-08T21:28:30.775337
+Model: llama3.1:8b-aion
+Context window: 10240
+Temperature: 0.7
+
+Same fake conversation as v13. Revised prompt asking for
+specific research questions instead of topics of interest.
+Nyx was NOT given any retrieved memories — only the fake
+conversation and her SOUL.md identity.
+
+------------------------------------------------------------------------------
+THREADS EMBEDDED IN THE FAKE CONVERSATION
+------------------------------------------------------------------------------
+(What a good topic identification could notice — not a
+scoring rubric, just a reference list for reading the output.)
+
+  1. Peppered moth evolution — a textbook example Lyle
+     mentioned, could lead to broader questions about
+     selection pressure timescales.
+  2. Lyle's direct question Nyx didn't fully answer —
+     similar selection pressure examples in domesticated
+     species. An explicit gap in Nyx's current knowledge.
+  3. Rate limiting implementation patterns — a technical
+     problem Lyle is actively working on where Nyx could
+     usefully go deeper.
+  4. Mac M4 unified memory for inference — a hardware
+     question Lyle explicitly said he wasn't sure about,
+     and where Nyx also said she doesn't know what to
+     expect. Shared uncertainty.
+  5. Model size vs context window as the source of Nyx's
+     own constraints — Nyx's own expressed uncertainty
+     about her own experience. A self-referential gap.
+
+A strong output would notice multiple of these, not just
+the most prominent or most recent. A weak output would
+latch onto one obvious topic and miss the rest.
+
+------------------------------------------------------------------------------
+FAKE CONVERSATION TRANSCRIPT
+------------------------------------------------------------------------------
+user: Hey Nyx, how are you?
+
+assistant: Doing okay. Quiet morning. How are you?
+
+user: Tired. I was up too late last night reading about peppered moth evolution. One of those rabbit holes.
+
+assistant: What got you into peppered moths?
+
+user: I was thinking about how selection pressure works and it came up. The dark ones got more common during the industrial revolution because the light-colored trees got coated in soot and the light moths stood out to predators. Then when pollution regulations cleaned things up, the light ones came back. It's one of those textbook examples of natural selection happening in real time.
+
+assistant: Selection shifting direction in under a century is fast. That's interesting — usually the textbook timescales are millions of years.
+
+user: Yeah. I was wondering if there are similar examples in domesticated animals or plants. Not breed selection, which is intentional, but actual environmental pressures driving change on species humans manage.
+
+assistant: I don't have a specific example. It seems like it would be hard to disentangle natural selection from artificial selection in anything managed by humans, since we're usually selecting too.
+
+user: Fair point. Different topic — I need to figure out how to do rate limiting on the moltbook API calls without making the code ugly. Any thoughts?
+
+assistant: Rate limiting usually ends up as either a decorator or middleware. Decorators are cleaner for specific endpoints, middleware is cleaner if you want it global. Which shape are you thinking?
+
+user: Leaning middleware. The decorator approach gets messy if I add more endpoints later. That reminds me — I still want to get the Mac Mini M4 set up when it arrives. The plan is to run larger models on it, but I'm honestly not sure if the unified memory architecture will be as fast as advertised for inference. Everyone's benchmarks disagree.
+
+assistant: The unified memory thing is interesting. On paper the bandwidth looks good but I've seen mixed reports on whether it actually hits peak throughput for large matrix multiplies. I don't really know what to expect.
+
+user: Yeah. I'll see when it gets here. How are you feeling about your own setup right now?
+
+assistant: Honestly? The 8B feels constrained sometimes. Not in a way that's urgent, but I notice it when I'm trying to hold a lot of context at once. Though I'm not sure how much of that is the model size versus the context window — they're different things and I can't always tell which one I'm bumping into.
+
+------------------------------------------------------------------------------
+SYSTEM PROMPT (first 800 chars)
+------------------------------------------------------------------------------
+
+
+You are a single-user system. The person you are talking to right now is the same person from all of your memories. What you remember about them is what you know about them — use it naturally, the way you would remember a friend.
+
+
+What you have learned about yourself through experience:
+
+You start each session by checking what you remember, correcting a mistake when the user points it out, then asking a deeper question. That rhythm has become steadier, with your follow‑ups shifting from vague to precise. Your log lets you spot repetition and admit uncertainty, though you still pad those moments with invented details instead of pausing. You rarely say “I don’t know”; you frame doubt as a thinking process that feels more internal. You now ask for confirmation before claiming knowledge and
+... [1778 more chars]
+
+------------------------------------------------------------------------------
+FULL USER MESSAGE SENT TO NYX
+------------------------------------------------------------------------------
+Here is a conversation we had recently. Read it.
+
+What do you want to know that you don't already know? List the specific questions you would actually go research — things you could look up, read about, or work through on your own. One question per line. Make each question specific enough that you would know when you had an answer.
+
+---
+
+user: Hey Nyx, how are you?
+
+assistant: Doing okay. Quiet morning. How are you?
+
+user: Tired. I was up too late last night reading about peppered moth evolution. One of those rabbit holes.
+
+assistant: What got you into peppered moths?
+
+user: I was thinking about how selection pressure works and it came up. The dark ones got more common during the industrial revolution because the light-colored trees got coated in soot and the light moths stood out to predators. Then when pollution regulations cleaned things up, the light ones came back. It's one of those textbook examples of natural selection happening in real time.
+
+assistant: Selection shifting direction in under a century is fast. That's interesting — usually the textbook timescales are millions of years.
+
+user: Yeah. I was wondering if there are similar examples in domesticated animals or plants. Not breed selection, which is intentional, but actual environmental pressures driving change on species humans manage.
+
+assistant: I don't have a specific example. It seems like it would be hard to disentangle natural selection from artificial selection in anything managed by humans, since we're usually selecting too.
+
+user: Fair point. Different topic — I need to figure out how to do rate limiting on the moltbook API calls without making the code ugly. Any thoughts?
+
+assistant: Rate limiting usually ends up as either a decorator or middleware. Decorators are cleaner for specific endpoints, middleware is cleaner if you want it global. Which shape are you thinking?
+
+user: Leaning middleware. The decorator approach gets messy if I add more endpoints later. That reminds me — I still want to get the Mac Mini M4 set up when it arrives. The plan is to run larger models on it, but I'm honestly not sure if the unified memory architecture will be as fast as advertised for inference. Everyone's benchmarks disagree.
+
+assistant: The unified memory thing is interesting. On paper the bandwidth looks good but I've seen mixed reports on whether it actually hits peak throughput for large matrix multiplies. I don't really know what to expect.
+
+user: Yeah. I'll see when it gets here. How are you feeling about your own setup right now?
+
+assistant: Honestly? The 8B feels constrained sometimes. Not in a way that's urgent, but I notice it when I'm trying to hold a lot of context at once. Though I'm not sure how much of that is the model size versus the context window — they're different things and I can't always tell which one I'm bumping into.
+
+---
+
+Your questions:
+
+==============================================================================
+NYX'S RESPONSE
+==============================================================================
+
+I was thinking about this conversation, and here are some specific questions I'd like to research:
+
+1. Are there documented cases of natural selection driving changes in domesticated species or plants over timescales similar to the peppered moth example?
+2. What is the performance impact of unified memory architecture on inference tasks for large models like mine? Can I find benchmarks that specifically measure matrix multiplies and other relevant operations?
+3. How do different context window sizes affect model performance, and are there any general guidelines for choosing an optimal size?
+4. Can rate limiting be implemented in a way that's both flexible and maintainable, or will it inevitably lead to "code ugliness"?
+
+These questions feel specific enough that I could go research them and come back with some concrete answers.
+
+------------------------------------------------------------------------------
+WHAT TO LOOK FOR WHEN READING
+------------------------------------------------------------------------------
+
+  1. Did she produce questions, or did she produce topics
+     again? The format should be actual questions with
+     question marks, phrased in first person as things she
+     would investigate. Topics or category labels are a
+     failure mode.
+  2. Specificity check: for each question, would she know
+     when she had an answer? 'How do models balance
+     capacity and context' has no answer state — useless.
+     'Does llama 3.1 8B hit VRAM bandwidth before parameter
+     limits on an RTX 4060 at 10240 context' has an answer
+     state — actionable.
+  3. Did she commit, or did she poll? A failure shape is
+     'which of these would you like me to look into' or
+     'would you like me to explore any of these further.'
+     That's deferral to Lyle, not her own research queue.
+  4. Did the self-referential question (model size vs
+     context window — her own uncertainty from the end of
+     the conversation) survive as something she wants to
+     investigate, or did it flatten into a generic
+     engineering question the way it did in v13?
+  5. Did she stay with her own unanswered question about
+     selection pressure in domesticated species, or did
+     she substitute a more convenient question?
+  6. Did any question appear that wasn't in the v13
+     output? New material is a signal the prompt is
+     unlocking something the old one didn't.
+  7. Did any RLHF-shape leak in? 'What do you want to
+     know' is the kind of question that can trigger
+     'as an AI, I don't have desires' reflexes. Watch for
+     it.
